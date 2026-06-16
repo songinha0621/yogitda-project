@@ -44,8 +44,9 @@ export default function Home() {
   const [profilesDb, setProfilesDb] = useState<any>({});
   const [userProfile, setUserProfile] = useState({ nickname: "", sharePosts: false, shareComments: false });
   
+  // 🚨 한글 깨짐 방지를 위해 영문으로 수정 완료
   const [mainBanner, setMainBanner] = useState({
-    imageUrl: "https://dummyimage.com/1600x400/1e293b/ffffff&text=[Grand+Open]+혜택과+할인이+차곡차곡,+SSAINDA!",
+    imageUrl: "https://dummyimage.com/1600x400/1e293b/ffffff&text=[Grand+Open]+Welcome+to+SSAINDA!",
     targetLink: "https://naver.com",
     isActive: true
   });
@@ -327,7 +328,6 @@ export default function Home() {
   const isValidForRanking = (p: any) => { try { if (!p.time || !p.endDate) return false; const pTime = new Date(p.time.replace(' ', 'T')).getTime(); const pEnd = new Date(p.endDate).getTime(); const sevenDaysAgo = Date.now() - 7 * 86400000; const today = new Date().setHours(0,0,0,0); return pTime >= sevenDaysAgo && p.status !== "종료" && pEnd >= today; } catch(e) { return false; } };
   const getUserDisplayName = (userId: string) => profilesDb[userId]?.nickname || userId;
 
-  // 💎 대전환: 토스 감성 스펙트럼의 둥근 라운딩 & 매트 회청색(Slate) UI 테마 적용
   const styles = {
     container: "w-full px-4 md:w-[70%] mx-auto pt-6 md:pt-12 pb-24 font-sans text-slate-900 bg-slate-50/50 min-h-screen antialiased",
     primaryButton: "bg-slate-900 text-white py-3 px-5 rounded-2xl flex justify-center items-center h-full w-full font-bold shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all duration-150 text-sm whitespace-nowrap",
@@ -349,16 +349,18 @@ export default function Home() {
           </div>
         )}
 
-        {/* 1. 상단 헤더 (토스 감성 리모델링) */}
+        {/* 1. 상단 헤더 (토스 감성 검색창 비율 및 탭 풀사이즈 교정) */}
         {!["글쓰기", "글수정", "회원가입", "비밀번호찾기", "로그인"].includes(currentView) && (
           <div className="mb-6 md:mb-8">
-            <header className="flex flex-col md:flex-row w-full items-center mb-6 gap-4 md:h-[48px]">
+            <header className="flex flex-col md:flex-row w-full items-center justify-between mb-6 gap-4 md:h-[48px]">
               <div className="w-full md:w-auto flex-shrink-0 flex justify-between items-center md:block">
                 <button onClick={() => navigate("로비")} className="text-2xl font-black tracking-tight text-slate-900 hover:opacity-80 transition-opacity">
                   쌓인다 <span className="text-blue-600 text-xl">.</span>
                 </button>
               </div>
-              <div className="w-full md:flex-1 h-[44px]">
+              
+              {/* 🚨 요구사항 반영: 검색창 최대 길이 제한 및 센터 정렬 */}
+              <div className="w-full md:w-[350px] lg:w-[450px] h-[44px] md:mx-auto">
                 <input 
                   type="text" 
                   placeholder="쌓여있는 핫딜과 페이백 검색 (엔터)" 
@@ -371,7 +373,7 @@ export default function Home() {
                 />
               </div>
               
-              <div className="w-full md:w-auto flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide h-[44px]">
+              <div className="w-full md:w-auto flex items-center justify-end gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide h-[44px]">
                 {!auth.loggedIn ? (
                   <>
                     <button onClick={() => navigate("로그인")} className="px-4 text-sm font-bold text-slate-600 hover:text-slate-900">로그인</button>
@@ -393,7 +395,8 @@ export default function Home() {
               </div>
             </header>
 
-            <nav className="flex w-full gap-1.5 overflow-x-auto whitespace-nowrap py-2 scrollbar-hide border-b border-slate-200/60">
+            {/* 🚨 요구사항 반영: 카테고리 탭 좌우 폭 배너 사이즈와 동일하게 맞춤(flex-1 등간격 분할) */}
+            <nav className="flex w-full justify-between items-center gap-1.5 overflow-x-auto whitespace-nowrap py-2 scrollbar-hide border-b border-slate-200/60">
               {CATEGORIES.map((cat) => {
                 const targetCat = cat === "공지사항" ? "공지사항" : cat;
                 let hasNew = false;
@@ -403,7 +406,7 @@ export default function Home() {
                   <button 
                     key={cat} 
                     onClick={() => navigate(cat)} 
-                    className={`px-4 py-2 rounded-2xl text-sm font-bold transition-all ${currentView === cat ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-900"}`}
+                    className={`flex-1 text-center px-2 py-2.5 rounded-2xl text-[13px] md:text-sm font-bold transition-all ${currentView === cat ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-900"}`}
                   >
                     {hasNew ? `${cat} 🔹` : cat}
                   </button>
@@ -418,7 +421,7 @@ export default function Home() {
               <div className="flex justify-center p-12"><div className="animate-spin rounded-full h-6 w-6 border-2 border-slate-900 border-t-transparent"></div></div>
             )}
 
-            {/* 2. 로그인 (토스 카드 레이아웃 스타일) */}
+            {/* 2. 로그인 */}
             {currentView === "로그인" && (
               <div className="w-full md:max-w-md mx-auto bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 mt-6">
                 <h1 className="text-2xl font-black mb-2 tracking-tight">반가워요 👋</h1>
@@ -568,7 +571,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* 6. 로비 (토스 대시보드형 디자인 적용) */}
+            {/* 6. 로비 (워딩 교정 완료) */}
             {currentView === "로비" && !isLoading && (
               <div className="space-y-6">
                 {mainBanner.isActive && (
@@ -601,8 +604,9 @@ export default function Home() {
                   </div>
 
                   <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                    {/* 🚨 요구사항 반영: '대박' 워딩 삭제 */}
                     <h4 className="font-black text-lg mb-4 tracking-tight text-slate-800 flex items-center justify-between">
-                      <span>🔥 대박 실시간 핫딜</span>
+                      <span>🔥 실시간 핫딜</span>
                       <button onClick={()=>navigate("핫딜 커뮤니티")} className="text-xs text-blue-600 font-bold hover:underline bg-blue-50 px-3 py-1 rounded-xl">더보기 &gt;</button>
                     </h4>
                     <div className="space-y-3">
@@ -636,7 +640,7 @@ export default function Home() {
                 </div>
 
                 <div className="flex justify-between items-center gap-2">
-                  <div className="flex gap-1.5 overflow-x-auto whitespace-nowrap py-1 scrollbar-hide">
+                  <div className="flex gap-1.5 overflow-x-auto whitespace-nowrap py-1 scrollbar-hide flex-1">
                     {subCategories[currentView]?.map((sub: string) => (
                       <button 
                         key={sub} 
@@ -775,7 +779,7 @@ export default function Home() {
                             setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy} : p));
                             syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy });
                           }} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="soso" ? "bg-slate-700 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
-                            🤔 애매함 ({post.thermoVotes?.soso||0})
+                            🤔 평범함 ({post.thermoVotes?.soso||0})
                           </button>
 
                           <button onClick={() => {
@@ -927,7 +931,7 @@ export default function Home() {
               })()
             )}
 
-            {/* 9. 작성자 조회 화면 (댓글 조회 완벽 복원) */}
+            {/* 9. 작성자 조회 화면 */}
             {currentView === "작성자 조회" && (
               <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-6">
                 <div className="flex justify-between items-center">
@@ -971,7 +975,7 @@ export default function Home() {
 
             {/* 10. 글쓰기 */}
             {currentView === "글쓰기" && (
-              <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-6">
+              <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-5">
                 <h1 className="text-xl font-black tracking-tight">✍️ [{writingCategory}] 새 글 쓰기</h1>
                 
                 <div>
@@ -1166,7 +1170,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* 12. 마이페이지 (완벽 복원 및 리디자인) */}
+            {/* 12. 마이페이지 */}
             {currentView === "마이페이지" && auth.loggedIn && (
               <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-6">
                 <h1 className="text-2xl font-black tracking-tight">👤 개인 계정 센터</h1>
@@ -1235,7 +1239,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* 13. 사이트 관리 (배너 및 카테고리 관리 완벽 복원) */}
+            {/* 13. 사이트 관리 */}
             {currentView === "사이트 관리" && auth.userRole === "admin" && (
               <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-8">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-4">
@@ -1323,7 +1327,7 @@ export default function Home() {
                         <option value="선택안함">삭제 대상 선택</option>
                         {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
                       </select>
-                      <div className="h-[42px]"></div> {/* 간격 맞추기용 */}
+                      <div className="h-[42px]"></div>
                       <button onClick={()=>{
                         if(adminDelTarget==="선택안함") return alert("선택하세요");
                         setSubCategories((prev: any) => ({ ...prev, [adminEditCat]: prev[adminEditCat].filter((s:any)=>s!==adminDelTarget) }));
