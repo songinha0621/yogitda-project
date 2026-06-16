@@ -1,8 +1,8 @@
 import './globals.css'
 
 export const metadata = {
-  title: '요깄다 - 내가 찾던 핫딜, 할인',
-  description: '내가 찾던 페이백, 할인 요깄다!',
+  title: '쌓인다 - 내가 찾던 핫딜, 할인',
+  description: '내가 찾던 할인, 페이백이 쌓인다!',
 }
 
 export default function RootLayout({
