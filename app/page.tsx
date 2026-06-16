@@ -17,6 +17,12 @@ export default function Home() {
   const [editingPostId, setEditingPostId] = useState<number | null>(null);
   const [selectedTargetUser, setSelectedTargetUser] = useState<string>(""); 
 
+  // 🚨 아까 길을 잃었던 상태(State)들을 컴포넌트 최상단으로 무사히 구출했습니다!
+  const [currentPage, setCurrentPage] = useState(1);  
+  const [myPageTab, setMyPageTab] = useState(0);
+  const [selectedSub, setSelectedSub] = useState("전체");
+  const [sortOption, setSortOption] = useState("최신순");
+
   const [auth, setAuth] = useState({ loggedIn: false, userId: "", userRole: "guest" });
 
   const CATEGORIES = ["옷", "음식", "여가", "쇼핑", "여행", "핫딜 커뮤니티", "공지사항", "요청"];
@@ -269,10 +275,6 @@ export default function Home() {
   const [adminBannerImg, setAdminBannerImg] = useState(mainBanner.imageUrl); const [adminBannerLink, setAdminBannerLink] = useState(mainBanner.targetLink); const [adminBannerActive, setAdminBannerActive] = useState(mainBanner.isActive);
   const [adminEditCat, setAdminEditCat] = useState("옷"); const [adminAddSubInput, setAdminAddSubInput] = useState(""); const [adminRenameTarget, setAdminRenameTarget] = useState("선택안함"); const [adminRenameInput, setAdminRenameInput] = useState(""); const [adminDelTarget, setAdminDelTarget] = useState("선택안함");
   
-  const [myPageTab, setMyPageTab] = useState(0);
-  const [selectedSub, setSelectedSub] = useState("전체");
-  const [sortOption, setSortOption] = useState("최신순");
-
   const navigate = (view: string) => { 
     setCurrentView(view); setFocusPostId(null); setActiveSearch(""); setSearchQuery(""); setSelectedSub("전체"); setCurrentPage(1); window.scrollTo(0,0); 
     
