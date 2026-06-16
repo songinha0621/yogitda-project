@@ -17,7 +17,6 @@ export default function Home() {
   const [editingPostId, setEditingPostId] = useState<number | null>(null);
   const [selectedTargetUser, setSelectedTargetUser] = useState<string>(""); 
 
-  // 🚨 아까 길을 잃었던 상태(State)들을 컴포넌트 최상단으로 무사히 구출했습니다!
   const [currentPage, setCurrentPage] = useState(1);  
   const [myPageTab, setMyPageTab] = useState(0);
   const [selectedSub, setSelectedSub] = useState("전체");
@@ -46,22 +45,18 @@ export default function Home() {
   const [userProfile, setUserProfile] = useState({ nickname: "", sharePosts: false, shareComments: false });
   
   const [mainBanner, setMainBanner] = useState({
-    imageUrl: "https://dummyimage.com/1600x300/475569/f8fafc&text=[Grand+Open]+Yogitda+Top+3+Event!",
+    imageUrl: "https://dummyimage.com/1600x400/1e293b/ffffff&text=[Grand+Open]+혜택과+할인이+차곡차곡,+SSAINDA!",
     targetLink: "https://naver.com",
     isActive: true
   });
 
   const [posts, setPosts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // 🚀 서버 사이드 페이지네이션을 위한 전체 페이지 수 상태
   const [totalPages, setTotalPages] = useState(1);
 
-  // 🚀 강력해진 SSR 맞춤형 데이터 패칭 엔진
   const fetchTargetData = async () => {
     setIsLoading(true);
     try {
-      // 1. 프로필 정보 항상 최신화
       const { data: profilesRes } = await supabase.from('profiles').select('*');
       if (profilesRes) {
         const pMap: any = {};
@@ -76,16 +71,13 @@ export default function Home() {
         }
       }
 
-      // 2. 현재 화면(View)에 딱 맞는 데이터만 수파베이스에 요청
       let query = supabase.from('deals').select('*', { count: 'exact' });
 
       if (CATEGORIES.includes(currentView) && !focusPostId) {
-        // [카테고리 리스트] - 필요한 8개만 쏙 빼오기
         query = query.eq('category', currentView);
         const isClosable = !["공지사항", "요청"].includes(currentView);
         const todayStr = new Date().toISOString().split('T')[0];
 
-        // 상태(종료여부) 필터링 서버 위임
         if (isClosable) {
           if (selectedSub === "종료") {
             query = query.or(`status.eq.종료,end_date.lt.${todayStr}`);
@@ -97,12 +89,10 @@ export default function Home() {
           if (selectedSub !== "전체") query = query.eq('sub_category', selectedSub);
         }
 
-        // 검색어 서버 연동
         if (activeSearch) {
           query = query.or(`title.ilike.%${activeSearch}%,content.ilike.%${activeSearch}%`);
         }
 
-        // 정렬 조건 서버 연동
         if (sortOption === "조회순") {
           query = query.order('views', { ascending: false });
         } else if (sortOption === "추천순") {
@@ -111,16 +101,13 @@ export default function Home() {
           query = query.order('id', { ascending: false });
         }
 
-        // 🚨 핵심: 페이지 구간 끊어오기 (.range)
         const from = (currentPage - 1) * 8;
         const to = from + 8 - 1;
         query = query.range(from, to);
 
       } else if (focusPostId) {
-        // [상세글 보기] - 딱 1개만 가져오기
         query = query.eq('id', focusPostId - 10000);
       } else {
-        // [로비 랭킹 / 마이페이지 / 유저 조회] - 분석용 200개 뭉치만 최신순 로드
         query = query.order('id', { ascending: false }).limit(200);
       }
 
@@ -155,12 +142,10 @@ export default function Home() {
         
         setPosts(mappedPosts);
         
-        // 전체 글 갯수 기반으로 총 페이지 수 계산
         if (CATEGORIES.includes(currentView) && !focusPostId && count !== null) {
           setTotalPages(Math.ceil(count / 8) || 1);
         }
 
-        // 주소창 공유 접속 시 팝업 로직
         setTimeout(() => {
           if (typeof window !== "undefined" && !focusPostId) {
             const urlParams = new URLSearchParams(window.location.search);
@@ -168,7 +153,6 @@ export default function Home() {
             if (postIdFromUrl && currentView === "로비") {
               const targetPostId = parseInt(postIdFromUrl, 10);
               setFocusPostId(targetPostId);
-              // (주의: 다이렉트 링크의 경우 DB에서 카테고리를 알아야 완벽하지만 우선 상세뷰는 띄움)
               setCurrentView("핫딜 커뮤니티"); 
             }
           }
@@ -180,11 +164,9 @@ export default function Home() {
     setIsLoading(false);
   };
 
-  // 🚀 유저가 게시판 필터, 페이지, 검색을 바꿀 때마다 알아서 서버에서 다시 가져옴 (핵심 트리거)
   useEffect(() => {
     fetchTargetData();
   }, [currentView, selectedSub, sortOption, activeSearch, currentPage, focusPostId, auth.userId]);
-
 
   const syncUpdateToDB = async (postId: number, updateFields: any) => {
     if (postId < 10000) return; 
@@ -201,7 +183,6 @@ export default function Home() {
     if (updateFields.comments !== undefined) dbFields.comments = updateFields.comments;
 
     const { error } = await supabase.from('deals').update(dbFields).eq('id', dbId);
-    if (error) console.error("DB 업데이트 실패:", error);
   };
 
   const handleSocialLogin = async (provider: string) => {
@@ -277,14 +258,10 @@ export default function Home() {
   
   const navigate = (view: string) => { 
     setCurrentView(view); setFocusPostId(null); setActiveSearch(""); setSearchQuery(""); setSelectedSub("전체"); setCurrentPage(1); window.scrollTo(0,0); 
-    
     if (typeof window !== "undefined") window.history.pushState({}, '', '/'); 
 
     if (view === "글쓰기") { 
-      setWriteImages([]); 
-      setWriteFiles([]); 
-      setWriteTitle(""); 
-      setWriteContent(""); 
+      setWriteImages([]); setWriteFiles([]); setWriteTitle(""); setWriteContent(""); 
     }
   };
   
@@ -302,19 +279,13 @@ export default function Home() {
       }));
       setViewedPosts((prev: any) => ({ ...prev, [postKey]: now }));
     }
-    setFocusPostId(postId);
-    setCurrentView(cat);
-    
+    setFocusPostId(postId); setCurrentView(cat);
     if (typeof window !== "undefined") window.history.pushState({}, '', `?post=${postId}`);
-    
     window.scrollTo(0,0);
   };
 
   const handleAuthorClick = (authorId: string) => {
-    setSelectedTargetUser(authorId);
-    setCurrentView("작성자 조회");
-    setFocusPostId(null);
-    window.scrollTo(0,0);
+    setSelectedTargetUser(authorId); setCurrentView("작성자 조회"); setFocusPostId(null); window.scrollTo(0,0);
   };
 
   const addNotify = async (targetUser: string, text: string, postId: number) => {
@@ -325,45 +296,23 @@ export default function Home() {
   const handleMultiImageUpload = (e: any) => { 
     const files = Array.from(e.target.files) as File[];
     setWriteFiles((prev: File[]) => [...prev, ...files]);
-
     files.forEach(file => {
       const reader = new FileReader(); 
-      reader.onloadend = () => {
-        setWriteImages((prev: string[]) => [...prev, reader.result as string]);
-      };
+      reader.onloadend = () => { setWriteImages((prev: string[]) => [...prev, reader.result as string]); };
       reader.readAsDataURL(file);
     });
   };
 
   const saveProfileInfo = async () => {
-    if (!userProfile.nickname.trim()) {
-      return alert("닉네임을 입력해주세요.");
-    }
-
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('user_id')
-      .eq('nickname', userProfile.nickname)
-      .neq('user_id', auth.userId)
-      .maybeSingle();
-
-    if (existingUser) {
-      return alert("🚨 이미 다른 분이 사용 중인 닉네임입니다. 다른 닉네임을 입력해주세요.");
-    }
+    if (!userProfile.nickname.trim()) return alert("닉네임을 입력해주세요.");
+    const { data: existingUser } = await supabase.from('profiles').select('user_id').eq('nickname', userProfile.nickname).neq('user_id', auth.userId).maybeSingle();
+    if (existingUser) return alert("🚨 이미 다른 분이 사용 중인 닉네임입니다.");
 
     const { error } = await supabase.from('profiles').upsert([{
-      user_id: auth.userId,
-      nickname: userProfile.nickname,
-      share_posts: userProfile.sharePosts,
-      share_comments: userProfile.shareComments
+      user_id: auth.userId, nickname: userProfile.nickname, share_posts: userProfile.sharePosts, share_comments: userProfile.shareComments
     }]);
-
-    if (error) {
-      alert("설정 저장에 실패했습니다.");
-    } else {
-      alert("내 정보 및 공개 설정이 성공적으로 적용되었습니다.");
-      fetchTargetData(); 
-    }
+    if (error) alert("설정 저장에 실패했습니다.");
+    else { alert("내 정보 및 공개 설정이 안전하게 저장되었습니다."); fetchTargetData(); }
   };
 
   const handleBannerUpload = (e: any) => {
@@ -376,333 +325,330 @@ export default function Home() {
   };
 
   const isValidForRanking = (p: any) => { try { if (!p.time || !p.endDate) return false; const pTime = new Date(p.time.replace(' ', 'T')).getTime(); const pEnd = new Date(p.endDate).getTime(); const sevenDaysAgo = Date.now() - 7 * 86400000; const today = new Date().setHours(0,0,0,0); return pTime >= sevenDaysAgo && p.status !== "종료" && pEnd >= today; } catch(e) { return false; } };
-
   const getUserDisplayName = (userId: string) => profilesDb[userId]?.nickname || userId;
 
-  // 🚀 모바일에 맞춘 반응형 CSS 스타일로 전면 교체
+  // 💎 대전환: 토스 감성 스펙트럼의 둥근 라운딩 & 매트 회청색(Slate) UI 테마 적용
   const styles = {
-    container: "w-full px-4 md:w-[85%] md:px-0 mx-auto pt-6 md:pt-[4.5rem] pb-[3rem] font-sans text-slate-900 bg-white min-h-screen",
-    primaryButton: "bg-slate-600 text-white border border-slate-600 py-2 px-4 rounded flex justify-center items-center h-full w-full font-bold shadow-sm transition-colors duration-150 text-sm md:text-base whitespace-nowrap",
-    secondaryButton: "bg-white border border-slate-300 text-slate-600 py-2 px-4 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-400 transition-colors duration-150 flex justify-center items-center h-full w-full font-bold text-sm md:text-base whitespace-nowrap",
-    tertiaryButton: "bg-transparent border-none text-slate-700 hover:text-blue-600 hover:underline transition-colors duration-150 p-0 m-0 text-left justify-start w-full text-[14px] md:text-[15px]"
+    container: "w-full px-4 md:w-[70%] mx-auto pt-6 md:pt-12 pb-24 font-sans text-slate-900 bg-slate-50/50 min-h-screen antialiased",
+    primaryButton: "bg-slate-900 text-white py-3 px-5 rounded-2xl flex justify-center items-center h-full w-full font-bold shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all duration-150 text-sm whitespace-nowrap",
+    secondaryButton: "bg-white text-slate-700 py-3 px-5 rounded-2xl border border-slate-200 hover:bg-slate-50 active:scale-[0.98] transition-all duration-150 flex justify-center items-center h-full w-full font-bold text-sm whitespace-nowrap",
+    tertiaryButton: "bg-transparent border-none text-slate-800 hover:text-blue-600 transition-colors duration-150 p-0 m-0 text-left justify-start w-full text-[15px] font-medium"
   };
 
   return (
     <>
       <Head>
-        <title>요깄다 - 내가 찾던 핫딜, 할인</title>
+        <title>쌓인다 - 혜택과 할인이 차곡차곡</title>
       </Head>
 
       <div className={styles.container}>
         
         {toast.show && (
-          <div className="fixed bottom-10 right-4 md:right-10 bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl z-50 animate-bounce">
-            <b className="text-yellow-400">🔔 알림:</b> {toast.message}
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3.5 rounded-2xl shadow-xl z-50 text-sm font-bold flex items-center gap-2">
+            <span className="text-blue-400">🔔</span> {toast.message}
           </div>
         )}
 
-        {/* 상단 헤더 (모바일 반응형 스택 구조 적용) */}
+        {/* 1. 상단 헤더 (토스 감성 리모델링) */}
         {!["글쓰기", "글수정", "회원가입", "비밀번호찾기", "로그인"].includes(currentView) && (
-          <div className="mb-4">
-            <header className="flex flex-col md:flex-row w-full items-center mb-4 gap-3 md:gap-4 md:h-[40px]">
-              <div className="w-full md:w-auto flex-shrink-0 flex justify-center md:block">
-                <button onClick={() => navigate("로비")} className={currentView === "로비" ? styles.primaryButton : styles.secondaryButton}>📍 요깄다</button>
+          <div className="mb-6 md:mb-8">
+            <header className="flex flex-col md:flex-row w-full items-center mb-6 gap-4 md:h-[48px]">
+              <div className="w-full md:w-auto flex-shrink-0 flex justify-between items-center md:block">
+                <button onClick={() => navigate("로비")} className="text-2xl font-black tracking-tight text-slate-900 hover:opacity-80 transition-opacity">
+                  쌓인다 <span className="text-blue-600 text-xl">.</span>
+                </button>
               </div>
-              <div className="w-full md:flex-1 md:px-2 h-[40px]">
+              <div className="w-full md:flex-1 h-[44px]">
                 <input 
                   type="text" 
-                  placeholder="놓친 핫딜이나 혜택을 검색 (엔터)" 
+                  placeholder="쌓여있는 핫딜과 페이백 검색 (엔터)" 
                   value={searchQuery} 
                   onChange={(e) => setSearchQuery(e.target.value)} 
                   onKeyDown={(e) => { 
                     if (e.key === 'Enter') { setActiveSearch(searchQuery); if(currentView === "로비") navigate("핫딜 커뮤니티"); } 
                   }} 
-                  className="w-full h-full p-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow text-sm" 
+                  className="w-full h-full px-4 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:border-slate-400 transition-all text-sm shadow-sm" 
                 />
               </div>
               
-              <div className="w-full md:w-auto flex items-center justify-start md:justify-end gap-2 overflow-x-auto whitespace-nowrap pb-2 md:pb-0 scrollbar-hide h-[40px]">
+              <div className="w-full md:w-auto flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide h-[44px]">
                 {!auth.loggedIn ? (
                   <>
-                    <button onClick={() => navigate("로그인")} className={currentView === "로그인" ? styles.primaryButton : styles.secondaryButton}>로그인</button>
-                    <button onClick={() => navigate("회원가입")} className={currentView === "회원가입" ? styles.primaryButton : styles.secondaryButton}>회원가입</button>
+                    <button onClick={() => navigate("로그인")} className="px-4 text-sm font-bold text-slate-600 hover:text-slate-900">로그인</button>
+                    <button onClick={() => navigate("회원가입")} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors">시작하기</button>
                   </>
                 ) : (
                   <>
-                    <div className="text-sm px-2 flex items-center gap-1 font-bold text-slate-800">
-                      {auth.userRole === "admin" ? "👑 " : "👤 "}{userProfile.nickname}님
+                    <div className="text-sm px-2 font-bold text-slate-800 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span> {userProfile.nickname}님
                     </div>
-                    <button onClick={() => navigate("알림")} className={currentView === "알림" ? styles.primaryButton : styles.secondaryButton}>🔔 {notifications[auth.userId]?.filter((n:any)=>!n.read).length > 0 ? `(${notifications[auth.userId].filter((n:any)=>!n.read).length})` : ""}</button>
-                    <button onClick={() => navigate("마이페이지")} className={currentView === "마이페이지" ? styles.primaryButton : styles.secondaryButton}>마이페이지</button>
-                    {auth.userRole === "admin" && <button onClick={() => navigate("사이트 관리")} className={currentView === "사이트 관리" ? styles.primaryButton : styles.secondaryButton}>{posts.some(p => p.reportedBy?.length >= 3) ? "🚨 관리" : "⚙️ 관리"}</button>}
-                    <button onClick={async () => { await supabase.auth.signOut(); navigate("로비"); }} className={styles.secondaryButton}>로그아웃</button>
+                    <button onClick={() => navigate("알림")} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+                      🔔 {notifications[auth.userId]?.filter((n:any)=>!n.read).length > 0 ? `(${notifications[auth.userId].filter((n:any)=>!n.read).length})` : ""}
+                    </button>
+                    <button onClick={() => navigate("마이페이지")} className="px-3 text-sm font-bold text-slate-600 hover:text-slate-900">내 정보</button>
+                    {auth.userRole === "admin" && <button onClick={() => navigate("사이트 관리")} className="px-3 text-sm font-bold text-red-500">관리자</button>}
+                    <button onClick={async () => { await supabase.auth.signOut(); navigate("로비"); }} className="px-3 text-sm font-bold text-slate-400 hover:text-slate-600">로그아웃</button>
                   </>
                 )}
               </div>
             </header>
 
-            <hr className="border-t border-slate-200 my-4" />
-
-            {/* 네비게이션 가로 스크롤 적용 (모바일에서 넘치지 않음) */}
-            <nav className="flex w-full gap-2 overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
+            <nav className="flex w-full gap-1.5 overflow-x-auto whitespace-nowrap py-2 scrollbar-hide border-b border-slate-200/60">
               {CATEGORIES.map((cat) => {
                 const targetCat = cat === "공지사항" ? "공지사항" : cat;
                 let hasNew = false;
                 try { hasNew = posts.some(p => p.category === targetCat && p.time && (Date.now() - new Date(p.time.replace(' ', 'T')).getTime()) / 3600000 <= 6); } catch(e) {}
                 
                 return (
-                  <div key={cat} className="flex-shrink-0 min-w-[80px]">
-                    <button onClick={() => navigate(cat)} className={currentView === cat ? styles.primaryButton : styles.secondaryButton}>{hasNew ? `${cat} 🔹` : cat}</button>
-                  </div>
+                  <button 
+                    key={cat} 
+                    onClick={() => navigate(cat)} 
+                    className={`px-4 py-2 rounded-2xl text-sm font-bold transition-all ${currentView === cat ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-900"}`}
+                  >
+                    {hasNew ? `${cat} 🔹` : cat}
+                  </button>
                 );
               })}
             </nav>
-            <hr className="border-t border-slate-200 my-4" />
           </div>
         )}
 
-        <div className="w-full max-w-5xl mx-auto">
+        <div className="w-full">
             {isLoading && (
-              <p className="text-center p-8 text-slate-500 font-bold text-sm md:text-base">데이터를 스마트하게 불러오는 중... ⏳</p>
+              <div className="flex justify-center p-12"><div className="animate-spin rounded-full h-6 w-6 border-2 border-slate-900 border-t-transparent"></div></div>
             )}
 
-            {/* 🔑 로그인 */}
+            {/* 2. 로그인 (토스 카드 레이아웃 스타일) */}
             {currentView === "로그인" && (
-              <div className="w-full md:max-w-md md:mx-auto">
-                <h1 className="text-2xl md:text-3xl font-bold mb-4">🔑 로그인</h1>
-                <p className="mb-4 text-sm md:text-base">요깄다에 오신 것을 환영합니다!</p>
-                <hr className="mb-4 border-slate-200"/>
+              <div className="w-full md:max-w-md mx-auto bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 mt-6">
+                <h1 className="text-2xl font-black mb-2 tracking-tight">반가워요 👋</h1>
+                <p className="mb-6 text-slate-500 text-sm">안전하고 똑똑하게 혜택을 쌓아보세요.</p>
                 
-                <div className="border border-slate-300 p-4 md:p-6 rounded mb-4">
-                  <div className="flex gap-2 md:gap-3 mb-6">
-                    <button onClick={() => handleSocialLogin('kakao')} className="flex-1 bg-[#FEE500] text-black font-bold py-2 md:py-3 rounded-lg shadow-sm hover:opacity-90 transition-opacity text-sm">💬 카카오 시작</button>
-                    <button onClick={() => handleSocialLogin('naver')} className="flex-1 bg-[#03C75A] text-white font-bold py-2 md:py-3 rounded-lg shadow-sm hover:opacity-90 transition-opacity text-sm">N 네이버 시작</button>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 mb-6">
-                    <hr className="flex-1 border-slate-200" /><span className="text-slate-400 text-xs md:text-sm whitespace-nowrap">또는 이메일로 로그인</span><hr className="flex-1 border-slate-200" />
-                  </div>
+                <div className="space-y-3 mb-6">
+                  <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm flex justify-center items-center gap-2 text-sm hover:opacity-95 transition-opacity">💬 카카오로 3초만에 시작</button>
+                  <button onClick={() => handleSocialLogin('naver')} className="w-full bg-[#03C75A] text-white font-bold py-3.5 rounded-2xl shadow-sm flex justify-center items-center gap-2 text-sm hover:opacity-95 transition-opacity">N 네이버로 시작하기</button>
+                </div>
+                
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-slate-100"></div>
+                  <span className="flex-shrink mx-4 text-slate-400 text-xs font-semibold">또는 이메일 로그인</span>
+                  <div className="flex-grow border-t border-slate-100"></div>
+                </div>
 
-                  <label className="block mb-2 text-sm font-bold">네이버 이메일 주소</label>
-                  <input type="text" placeholder="예: example@naver.com" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} className="w-full p-2 border border-slate-300 rounded mb-4 focus:ring-2 focus:ring-blue-400 focus:outline-none transition-shadow text-sm" />
+                <div className="space-y-4 mt-4">
+                  <input type="text" placeholder="네이버 이메일 주소" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200/60 rounded-2xl focus:outline-none focus:border-slate-400 transition-all text-sm" />
                   
-                  <label className="block mb-2 text-sm font-bold">비밀번호</label>
-                  <div className="relative mb-6">
-                    <input type={showLoginPw ? "text" : "password"} placeholder="비밀번호를 입력하세요" value={loginPw} onChange={e=>setLoginPw(e.target.value)} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none transition-shadow pr-10 text-sm" />
-                    <button type="button" onClick={() => setShowLoginPw(!showLoginPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 font-bold">
-                      {showLoginPw ? "🙈" : "👁️"}
-                    </button>
+                  <div className="relative">
+                    <input type={showLoginPw ? "text" : "password"} placeholder="비밀번호" value={loginPw} onChange={e=>setLoginPw(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200/60 rounded-2xl focus:outline-none focus:border-slate-400 transition-all text-sm pr-12" />
+                    <button type="button" onClick={() => setShowLoginPw(!showLoginPw)} className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-bold">{showLoginPw ? "🙈" : "👁️"}</button>
                   </div>
                   
-                  <div className="flex flex-col gap-2 h-auto">
+                  <div className="pt-2 space-y-2">
                     <button onClick={async ()=>{
                       const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPw });
-                      if (error) alert("🚨 이메일 또는 비밀번호가 일치하지 않습니다.");
-                      else navigate("로비");
-                    }} className={styles.primaryButton}>🚀 일반 로그인</button>
-                    <button onClick={()=>navigate("로비")} className={styles.secondaryButton}>⬅️ 로비로 이동</button>
+                      if (error) alert("🚨 계정 정보가 일치하지 않습니다."); else navigate("로비");
+                    }} className={styles.primaryButton}>로그인</button>
+                    <button onClick={()=>navigate("로비")} className={styles.secondaryButton}>취소</button>
                   </div>
                 </div>
                 
-                <p className="text-xs md:text-sm text-slate-500 mb-4 text-center">아직 회원이 아니신가요? 비밀번호를 잊으셨나요?</p>
-                <div className="flex gap-2">
-                  <button onClick={()=>navigate("회원가입")} className={`${styles.secondaryButton} flex-1`}>📝 회원가입</button>
-                  <button onClick={()=>navigate("비밀번호찾기")} className={`${styles.secondaryButton} flex-1`}>🔍 비밀번호 찾기</button>
+                <div className="flex justify-center gap-4 mt-6 text-xs font-bold text-slate-500">
+                  <button onClick={()=>navigate("회원가입")} className="hover:text-slate-900">회원가입</button>
+                  <span className="text-slate-200">|</span>
+                  <button onClick={()=>navigate("비밀번호찾기")} className="hover:text-slate-900">비밀번호 찾기</button>
                 </div>
               </div>
             )}
 
-            {/* 📝 회원가입 */}
+            {/* 3. 회원가입 */}
             {currentView === "회원가입" && (
-              <div className="w-full md:max-w-md md:mx-auto">
-                <h1 className="text-2xl md:text-3xl font-bold mb-4">📝 회원가입</h1>
-                <hr className="mb-4 border-slate-200"/>
-                
-                <div className="border border-slate-300 p-4 md:p-6 rounded mb-4 space-y-4">
-                  <div className="flex gap-2 md:gap-3 mb-2">
-                    <button onClick={() => handleSocialLogin('kakao')} className="flex-1 bg-[#FEE500] text-black font-bold py-2 md:py-3 rounded-lg shadow-sm hover:opacity-90 transition-opacity text-sm">💬 카카오 시작</button>
-                    <button onClick={() => handleSocialLogin('naver')} className="flex-1 bg-[#03C75A] text-white font-bold py-2 md:py-3 rounded-lg shadow-sm hover:opacity-90 transition-opacity text-sm">N 네이버 시작</button>
+              <div className="w-full md:max-w-md mx-auto bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 mt-6">
+                <h1 className="text-2xl font-black mb-6 tracking-tight">회원가입</h1>
+                <div className="space-y-4">
+                  <div className="flex gap-3 mb-2">
+                    <button onClick={() => handleSocialLogin('kakao')} className="flex-1 bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm text-sm hover:opacity-90 transition-opacity">💬 카카오 시작</button>
+                    <button onClick={() => handleSocialLogin('naver')} className="flex-1 bg-[#03C75A] text-white font-bold py-3.5 rounded-2xl shadow-sm text-sm hover:opacity-90 transition-opacity">N 네이버 시작</button>
                   </div>
                   
-                  <div className="flex items-center gap-4 py-2">
-                    <hr className="flex-1 border-slate-200" /><span className="text-slate-400 text-xs md:text-sm whitespace-nowrap">또는 네이버 메일로 가입</span><hr className="flex-1 border-slate-200" />
+                  <div className="relative flex py-2 items-center">
+                    <div className="flex-grow border-t border-slate-100"></div>
+                    <span className="flex-shrink mx-4 text-slate-400 text-xs font-semibold">또는 네이버 메일로 가입</span>
+                    <div className="flex-grow border-t border-slate-100"></div>
                   </div>
 
                   <div>
-                    <label className="block text-sm mb-1 font-bold">네이버 이메일</label>
-                    <input type="text" value={regEmail} onChange={e=>setRegEmail(e.target.value)} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none transition-shadow text-sm" placeholder="예: example@naver.com" />
-                    <p className="text-xs text-red-500 mt-1">※ 안전을 위해 오직 @naver.com 메일만 허용됩니다.</p>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">네이버 이메일</label>
+                    <input type="text" value={regEmail} onChange={e=>setRegEmail(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200/60 rounded-2xl focus:outline-none focus:border-slate-400 text-sm" placeholder="example@naver.com" />
+                    <p className="text-[11px] text-slate-400 mt-1">※ 안전을 위해 오직 @naver.com 주소만 허용됩니다.</p>
                   </div>
                   <div>
-                    <label className="block text-sm mb-1 font-bold">비밀번호</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">비밀번호</label>
                     <div className="relative">
-                      <input type={showRegPw ? "text" : "password"} value={regPw} onChange={e=>setRegPw(e.target.value)} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none transition-shadow pr-10 text-sm" placeholder="영문, 숫자, 특수기호 포함" />
-                      <button type="button" onClick={() => setShowRegPw(!showRegPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 font-bold">
-                        {showRegPw ? "🙈" : "👁️"}
-                      </button>
+                      <input type={showRegPw ? "text" : "password"} value={regPw} onChange={e=>setRegPw(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200/60 rounded-2xl focus:outline-none focus:border-slate-400 text-sm pr-12" placeholder="영문, 숫자, 특수기호 포함" />
+                      <button type="button" onClick={() => setShowRegPw(!showRegPw)} className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-bold">{showRegPw ? "🙈" : "👁️"}</button>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm mb-1 font-bold">비밀번호 확인</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">비밀번호 확인</label>
                     <div className="relative">
-                      <input type={showRegPwChk ? "text" : "password"} value={regPwChk} onChange={e=>setRegPwChk(e.target.value)} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none transition-shadow pr-10 text-sm" placeholder="비밀번호 재입력" />
-                      <button type="button" onClick={() => setShowRegPwChk(!showRegPwChk)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 font-bold">
-                        {showRegPwChk ? "🙈" : "👁️"}
-                      </button>
+                      <input type={showRegPwChk ? "text" : "password"} value={regPwChk} onChange={e=>setRegPwChk(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200/60 rounded-2xl focus:outline-none focus:border-slate-400 text-sm pr-12" placeholder="비밀번호 재입력" />
+                      <button type="button" onClick={() => setShowRegPwChk(!showRegPwChk)} className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-bold">{showRegPwChk ? "🙈" : "👁️"}</button>
                     </div>
                   </div>
-                </div>
-                
-                <div className="flex flex-col gap-2 h-auto">
-                  <button onClick={async ()=>{
-                    const hasEng = /[a-zA-Z]/.test(regPw); const hasNum = /\d/.test(regPw); const hasSpecial = /[!@#$%^&*()_\-+=\[\]{};':"\\|,.<>\/?]/.test(regPw);
-                    if (!regEmail || !regPw) return alert("이메일과 비밀번호를 모두 입력해주세요.");
-                    if (!regEmail.endsWith("@naver.com")) return alert("🚨 네이버 이메일(@naver.com)만 가입 가능합니다.");
-                    if (!(hasEng && hasNum && hasSpecial)) return alert("🚨 비밀번호 조건을 만족하지 않습니다.");
-                    if (regPw !== regPwChk) return alert("🚨 두 비밀번호가 일치하지 않습니다.");
-                    const { error } = await supabase.auth.signUp({ email: regEmail, password: regPw });
-                    if (error) alert("회원가입 실패 (이미 가입된 이메일일 수 있습니다): " + error.message);
-                    else { alert(`🎉 가입이 완료되었습니다!\n(만약 수파베이스 이메일 인증이 켜져있다면, 메일함에서 인증 링크를 클릭한 후 로그인해주세요.)`); navigate("로그인"); }
-                  }} className={styles.primaryButton}>🚀 가입 완료하기</button>
-                  <button onClick={()=>navigate("로비")} className={styles.secondaryButton}>⬅️ 취소</button>
-                </div>
-              </div>
-            )}
-
-            {/* 🔍 진짜 비밀번호 찾기 */}
-            {currentView === "비밀번호찾기" && (
-              <div className="w-full md:max-w-md md:mx-auto">
-                <h1 className="text-2xl md:text-3xl font-bold mb-4">🔍 비밀번호 찾기</h1><hr className="mb-4 border-slate-200"/>
-                <div className="border border-slate-300 p-4 md:p-6 rounded mb-4 space-y-4">
-                  <div className="p-3 md:p-4 bg-blue-50 text-blue-800 rounded font-bold mb-4 text-sm">
-                    가입하실 때 사용한 네이버 이메일 주소를 입력하시면 비밀번호 재설정 링크를 보내드립니다.
-                  </div>
-                  <div>
-                    <label className="block text-sm mb-1 font-bold">가입한 네이버 이메일</label>
-                    <input type="text" value={findEmail} onChange={e=>setFindEmail(e.target.value)} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none transition-shadow text-sm" placeholder="예: example@naver.com" />
-                  </div>
-                  <div className="h-10 mt-6">
+                  
+                  <div className="pt-4 space-y-2">
                     <button onClick={async ()=>{
-                      if (!findEmail.endsWith("@naver.com")) return alert("네이버 이메일 형식이 올바르지 않습니다.");
-                      const { error } = await supabase.auth.resetPasswordForEmail(findEmail, { redirectTo: window.location.origin });
-                      if (error) alert("이메일 발송 실패: " + error.message);
-                      else alert(`✅ [${findEmail}] 메일함으로 비밀번호 재설정 링크가 발송되었습니다.`);
-                    }} className={styles.primaryButton}>✉️ 비밀번호 재설정 메일 보내기</button>
+                      const hasEng = /[a-zA-Z]/.test(regPw); const hasNum = /\d/.test(regPw); const hasSpecial = /[!@#$%^&*()_\-+=\[\]{};':"\\|,.<>\/?]/.test(regPw);
+                      if (!regEmail || !regPw) return alert("빈칸을 모두 입력해 주세요.");
+                      if (!regEmail.endsWith("@naver.com")) return alert("🚨 네이버 이메일(@naver.com)만 가입 가능합니다.");
+                      if (!(hasEng && hasNum && hasSpecial)) return alert("🚨 비밀번호는 영문+숫자+특수문자 조합이어야 합니다.");
+                      if (regPw !== regPwChk) return alert("🚨 비밀번호 확인이 일치하지 않습니다.");
+                      const { error } = await supabase.auth.signUp({ email: regEmail, password: regPw });
+                      if (error) alert("가입 실패 (이미 가입된 이메일일 수 있습니다): " + error.message);
+                      else { alert("🎉 회원가입 성공! 메일함의 인증 링크를 클릭 후 로그인해 주세요."); navigate("로그인"); }
+                    }} className={styles.primaryButton}>가입 완료하기</button>
+                    <button onClick={()=>navigate("로비")} className={styles.secondaryButton}>취소</button>
                   </div>
-                </div>
-                <div className="h-10">
-                  <button onClick={()=>navigate("로그인")} className={styles.secondaryButton}>⬅️ 로그인으로 돌아가기</button>
                 </div>
               </div>
             )}
 
-            {/* 🔔 알림 센터 */}
+            {/* 4. 비밀번호 찾기 */}
+            {currentView === "비밀번호찾기" && (
+              <div className="w-full md:max-w-md mx-auto bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 mt-6">
+                <h1 className="text-2xl font-black mb-4 tracking-tight">비밀번호 재설정</h1>
+                <div className="space-y-4">
+                  <div className="p-4 bg-blue-50 text-blue-700 rounded-2xl text-xs font-semibold leading-relaxed">
+                    가입하신 네이버 이메일 주소를 입력하시면 안전한 패스워드 재설정 링크를 보내드립니다.
+                  </div>
+                  <input type="text" value={findEmail} onChange={e=>setFindEmail(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200/60 rounded-2xl focus:outline-none focus:border-slate-400 text-sm" placeholder="example@naver.com" />
+                  <div className="pt-2 space-y-2">
+                    <button onClick={async ()=>{
+                      if (!findEmail.endsWith("@naver.com")) return alert("올바른 네이버 이메일 형식을 입력하세요.");
+                      const { error } = await supabase.auth.resetPasswordForEmail(findEmail, { redirectTo: window.location.origin });
+                      if (error) alert("발송 실패: " + error.message);
+                      else alert(`✅ [${findEmail}] 메일함으로 재설정 주소가 날아갔습니다.`);
+                    }} className={styles.primaryButton}>인증 메일 쏘기</button>
+                    <button onClick={()=>navigate("로그인")} className={styles.secondaryButton}>돌아가기</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 5. 알림 센터 */}
             {currentView === "알림" && (
-              <div>
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm mt-6">
                 {!auth.loggedIn ? (
-                  <div className="p-4 bg-yellow-100 text-yellow-800 border rounded font-bold text-sm md:text-base">로그인이 필요한 서비스입니다.</div>
+                  <p className="text-slate-500 font-bold text-center py-6 text-sm">로그인이 필요합니다.</p>
                 ) : (
                   <>
-                    <h1 className="text-2xl md:text-3xl font-bold mb-4">🔔 알림 센터</h1>
-                    <p className="mb-4 text-sm md:text-base">내 게시글에 달린 반응을 확인하세요.</p>
-                    <hr className="mb-4 border-slate-200"/>
+                    <div className="flex justify-between items-center mb-6">
+                      <h1 className="text-xl font-black tracking-tight">🔔 실시간 알림</h1>
+                      {notifications[auth.userId]?.length > 0 && (
+                        <button onClick={async ()=>{ 
+                          setNotifications((prev:any)=>({...prev, [auth.userId]: prev[auth.userId].map((n:any)=>({...n, read:true}))}));
+                          await supabase.from('notifications').update({ read: true }).eq('target_user', auth.userId);
+                        }} className="text-xs text-blue-600 font-bold hover:underline bg-blue-50 px-3 py-1.5 rounded-xl">모두 읽음 처리</button>
+                      )}
+                    </div>
                     {(!notifications[auth.userId] || notifications[auth.userId].length === 0) ? (
-                      <div className="p-4 bg-blue-100 text-blue-800 border rounded font-bold text-sm md:text-base">새로운 알림이 없습니다.</div>
+                      <p className="text-slate-400 text-center py-12 text-sm font-semibold">아직 새로 쌓인 알림이 없어요.</p>
                     ) : (
-                      <>
-                        <div className="mb-4">
-                          <button onClick={async ()=>{ 
-                            setNotifications((prev:any)=>({...prev, [auth.userId]: prev[auth.userId].map((n:any)=>({...n, read:true}))}));
-                            await supabase.from('notifications').update({ read: true }).eq('target_user', auth.userId);
-                          }} className="w-full md:w-auto px-4 py-2 bg-slate-600 text-white hover:bg-slate-700 rounded transition-colors font-bold text-sm">
-                            모두 읽음 처리 (확인)
-                          </button>
-                        </div>
-                        <div className="space-y-3 md:space-y-4">
-                          {notifications[auth.userId].map((n:any)=>(
-                            <div key={n.id} className="border border-slate-300 p-3 md:p-4 rounded hover:bg-slate-50 transition-colors">
-                              <p className="font-bold text-slate-800 text-sm md:text-base">{!n.read && <span className="text-red-500">🔴 [NEW] </span>}{n.text}</p>
-                              <p className="text-xs md:text-sm text-slate-500 mt-2">🕒 {n.time}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </>
+                      <div className="space-y-3">
+                        {notifications[auth.userId].map((n:any)=>(
+                          <div key={n.id} className={`p-4 rounded-2xl border transition-all ${n.read ? "bg-slate-50/50 border-slate-100" : "bg-white border-blue-200 shadow-sm"}`}>
+                            <p className="text-sm font-bold text-slate-800">{!n.read && <span className="text-blue-500 mr-1.5">●</span>}{n.text}</p>
+                            <p className="text-[11px] text-slate-400 mt-2 font-semibold">{n.time}</p>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </>
                 )}
               </div>
             )}
 
-            {/* 📢 로비 */}
+            {/* 6. 로비 (토스 대시보드형 디자인 적용) */}
             {currentView === "로비" && !isLoading && (
-              <div className="w-full md:w-[75%] mx-auto">
-                <h4 className="text-base md:text-lg font-bold mb-4 text-slate-800">📢 내가 찾던 페이백, 할인 요깄다! [요깄다]</h4>
-                
+              <div className="space-y-6">
                 {mainBanner.isActive && (
-                  <a href={mainBanner.targetLink} target="_blank" rel="noreferrer" className="block w-full mb-6">
-                    <img src={mainBanner.imageUrl} className="w-full h-auto max-h-[150px] md:max-h-[300px] rounded-xl md:rounded-[16px] object-cover shadow-sm hover:opacity-90 transition-opacity" alt="banner" />
+                  <a href={mainBanner.targetLink} target="_blank" rel="noreferrer" className="block w-full transition-transform active:scale-[0.99]">
+                    <img src={mainBanner.imageUrl} className="w-full h-auto rounded-3xl object-cover shadow-sm border border-slate-100" alt="banner" />
                   </a>
                 )}
-                <hr className="mb-4 border-slate-200"/>
                 
-                <div className="flex flex-col md:flex-row gap-4">
-                  <div className="flex-1 border border-slate-300 p-4 rounded bg-white shadow-sm hover:shadow-md transition-shadow">
-                    <h4 className="font-bold text-base md:text-lg mb-4 text-slate-800 border-b pb-2">📊 실시간 할인 랭킹 &gt;</h4>
-                    {(() => {
-                      const validDisc = posts.filter(p => ["옷","음식","여가","쇼핑","여행"].includes(p.category) && p.author === "ext9999" && isValidForRanking(p)).sort((a,b)=>b.upvotes-a.upvotes).slice(0,3);
-                      if (validDisc.length === 0) return <p className="text-slate-500 text-xs md:text-sm">7일 내 등록된 활성 할인 정보가 없습니다.</p>;
-                      return validDisc.map((p, idx) => (
-                        <div key={p.id} className="mb-2">
-                          <button onClick={()=>handleViewPost(p.id, p.category)} className={styles.tertiaryButton}>
-                            <span className="truncate block">👉 {idx+1}. [{p.category}] {p.title} <span className="text-slate-500 font-normal">(👍 {p.upvotes})</span></span>
-                          </button>
-                        </div>
-                      ));
-                    })()}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                    <h4 className="font-black text-lg mb-4 tracking-tight text-slate-800 flex items-center justify-between">
+                      <span>📊 이번 주 인기 할인</span>
+                      <span className="text-xs text-slate-400 font-bold">인기순</span>
+                    </h4>
+                    <div className="space-y-3">
+                      {(() => {
+                        const validDisc = posts.filter(p => ["옷","음식","여가","쇼핑","여행"].includes(p.category) && p.author === "ext9999" && isValidForRanking(p)).sort((a,b)=>b.upvotes-a.upvotes).slice(0,3);
+                        if (validDisc.length === 0) return <p className="text-slate-400 text-xs py-4 font-semibold">쌓여있는 베스트 정보가 아직 없습니다.</p>;
+                        return validDisc.map((p, idx) => (
+                          <div key={p.id} className="flex items-center gap-3 py-1.5 border-b border-slate-50 last:border-0">
+                            <span className="text-lg font-black text-slate-300 w-5 text-center">{idx+1}</span>
+                            <button onClick={()=>handleViewPost(p.id, p.category)} className="text-sm font-bold text-slate-700 hover:text-blue-600 truncate flex-1 text-left">
+                              [{p.category}] {p.title}
+                            </button>
+                            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-xl">👍 {p.upvotes}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
                   </div>
-                  <div className="flex-1 border border-slate-300 p-4 rounded bg-white shadow-sm hover:shadow-md transition-shadow">
-                    <button onClick={()=>navigate("핫딜 커뮤니티")} className="w-full text-left font-bold text-base md:text-lg mb-4 text-red-600 border-b pb-2 hover:text-red-700">
-                      🔥 실시간 핫딜 랭킹 &gt;
-                    </button>
-                    {(() => {
-                      const validHot = posts.filter(p => p.category === "핫딜 커뮤니티" && isValidForRanking(p)).sort((a,b)=>(b.thermoVotes?.hot||0)-(a.thermoVotes?.hot||0)).slice(0,3);
-                      if (validHot.length === 0) return <p className="text-slate-500 text-xs md:text-sm">7일 내 등록된 활성 핫딜 정보가 없습니다.</p>;
-                      return validHot.map((p, idx) => (
-                        <div key={p.id} className="mb-2">
-                          <button onClick={()=>handleViewPost(p.id, p.category)} className={styles.tertiaryButton}>
-                            <span className="truncate block">👉 {idx+1}. {p.mallName ? `[${p.mallName}] ` : ""}{p.title} <span className="text-slate-500 font-normal">(🔥 {p.thermoVotes?.hot||0})</span></span>
-                          </button>
-                        </div>
-                      ));
-                    })()}
+
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                    <h4 className="font-black text-lg mb-4 tracking-tight text-slate-800 flex items-center justify-between">
+                      <span>🔥 대박 실시간 핫딜</span>
+                      <button onClick={()=>navigate("핫딜 커뮤니티")} className="text-xs text-blue-600 font-bold hover:underline bg-blue-50 px-3 py-1 rounded-xl">더보기 &gt;</button>
+                    </h4>
+                    <div className="space-y-3">
+                      {(() => {
+                        const validHot = posts.filter(p => p.category === "핫딜 커뮤니티" && isValidForRanking(p)).sort((a,b)=>(b.thermoVotes?.hot||0)-(a.thermoVotes?.hot||0)).slice(0,3);
+                        if (validHot.length === 0) return <p className="text-slate-400 text-xs py-4 font-semibold">실시간으로 달아오르는 핫딜이 아직 없습니다.</p>;
+                        return validHot.map((p, idx) => (
+                          <div key={p.id} className="flex items-center gap-3 py-1.5 border-b border-slate-50 last:border-0">
+                            <span className="text-lg font-black text-red-300 w-5 text-center">{idx+1}</span>
+                            <button onClick={()=>handleViewPost(p.id, p.category)} className="text-sm font-bold text-slate-700 hover:text-red-500 truncate flex-1 text-left">
+                              {p.mallName ? `[${p.mallName}] ` : ""}{p.title}
+                            </button>
+                            <span className="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-xl">🔥 {p.thermoVotes?.hot||0}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* 📂 카테고리 홈 & 리스트 */}
+            {/* 7. 카테고리 홈 & 리스트 */}
             {CATEGORIES.includes(currentView) && !focusPostId && (
-              <div>
-                <div className="flex flex-col md:flex-row mb-4 items-start md:items-center justify-between gap-2">
-                  <h3 className="text-lg md:text-xl font-bold text-slate-800">📂 카테고리 홈 &gt; {currentView}</h3>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center bg-white p-5 rounded-3xl border border-slate-100 shadow-sm mb-2">
+                  <h3 className="text-xl font-black tracking-tight text-slate-800">{currentView}</h3>
                   {(auth.userRole === "admin" || ["핫딜 커뮤니티", "요청"].includes(currentView)) && (
-                    <div className="w-full md:w-auto h-[36px]">
-                      <button onClick={()=>{ setWritingCategory(currentView); setWriteSubCat("일반"); navigate("글쓰기"); }} className={styles.primaryButton}>📝 글쓰기</button>
-                    </div>
+                    <button onClick={()=>{ setWritingCategory(currentView); setWriteSubCat("일반"); navigate("글쓰기"); }} className="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl text-xs hover:bg-slate-800 transition-colors shadow-sm">📝 새 글 쓰기</button>
                   )}
                 </div>
 
-                <div className="flex gap-2 md:gap-4 mb-4 bg-slate-50 p-2 md:p-3 rounded border border-slate-200 overflow-x-auto whitespace-nowrap scrollbar-hide">
-                  {subCategories[currentView]?.map((sub: string) => (
-                    <label key={sub} className={`flex-shrink-0 flex items-center gap-1 cursor-pointer text-xs md:text-sm font-bold px-3 py-1.5 md:py-1 rounded-full transition-colors ${selectedSub === sub ? "bg-slate-600 text-white" : "bg-white border text-slate-600 hover:bg-blue-50 hover:text-blue-600"}`}>
-                      <input type="radio" checked={selectedSub === sub} onChange={() => { setSelectedSub(sub); setCurrentPage(1); }} className="hidden" /> {sub}
-                    </label>
-                  ))}
-                </div>
-
-                <div className="flex mb-4 justify-end">
-                  <div className="w-full md:w-[150px]">
-                    <select value={sortOption} onChange={(e) => { setSortOption(e.target.value); setCurrentPage(1); }} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow">
+                <div className="flex justify-between items-center gap-2">
+                  <div className="flex gap-1.5 overflow-x-auto whitespace-nowrap py-1 scrollbar-hide">
+                    {subCategories[currentView]?.map((sub: string) => (
+                      <button 
+                        key={sub} 
+                        onClick={() => { setSelectedSub(sub); setCurrentPage(1); }}
+                        className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all ${selectedSub === sub ? "bg-slate-900 text-white shadow-sm" : "bg-white border border-slate-200/80 text-slate-500 hover:text-slate-900"}`}
+                      >
+                        {sub}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex-shrink-0">
+                    <select value={sortOption} onChange={(e) => { setSortOption(e.target.value); setCurrentPage(1); }} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none text-slate-600 shadow-sm cursor-pointer">
                       <option value="최신순">최신순</option>
                       <option value="조회순">조회순</option>
                       <option value="추천순">추천순</option>
@@ -710,290 +656,242 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div>
-                  {posts.length > 0 && <div className="border-t-2 border-slate-600 mb-2"></div>}
-                  
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden py-2 px-2 md:px-4">
                   {!isLoading && posts.length === 0 ? (
-                    <p className="p-8 border border-slate-300 text-center text-slate-500 rounded text-sm md:text-base">해당하는 게시글이 없습니다.</p>
+                    <p className="p-12 text-center text-slate-400 text-sm font-semibold">조건에 맞는 피드가 비어있어요.</p>
                   ) : posts.map(p => {
                     let isExp = false;
                     try { isExp = p.status === "종료" || new Date(p.endDate) < new Date(new Date().setHours(0,0,0,0)); } catch(e) {}
-                    const expTag = (isExp && selectedSub !== "종료") ? <span className="text-red-500 mr-1">[종료]</span> : "";
-                    const hasImg = p.image || (p.images && p.images.length > 0);
-                    const imgIcon = hasImg ? " 🖼️" : "";
+                    const expTag = (isExp && selectedSub !== "종료") ? <span className="text-red-500 font-bold mr-1.5">[종료]</span> : "";
                     
-                    let titleStr = `[${p.subCategory || "일반"}] ${expTag}${currentView==="핫딜 커뮤니티" && p.mallName ? `[${p.mallName}] ` : ""}${p.title}${imgIcon}`;
-                    if (currentView === "핫딜 커뮤니티" && p.price) titleStr += ` (${p.price} / ${p.shipping})`;
+                    let titleStr = `${expTag}${currentView==="핫딜 커뮤니티" && p.mallName ? `[${p.mallName}] ` : ""}${p.title}`;
+                    if (currentView === "핫딜 커뮤니티" && p.price) titleStr += ` (${p.price})`;
                     
                     return (
-                      <div key={p.id} className="hover:bg-blue-50 transition-colors duration-150 rounded px-2 -mx-2">
-                        <div className="flex flex-col md:flex-row py-2 md:py-3 md:items-center">
-                          <div className="w-full md:w-3/4 mb-1 md:mb-0">
-                            <button onClick={()=>handleViewPost(p.id, p.category)} className={styles.tertiaryButton} style={{fontWeight: 'bold'}}>
-                              {titleStr}
-                            </button>
-                          </div>
-                          <div className="w-full md:w-1/4 flex items-center justify-start md:justify-end text-[11px] md:text-[13px] text-slate-500 gap-2 md:gap-1 flex-wrap">
-                            <button onClick={() => handleAuthorClick(p.author)} className="font-bold text-slate-700 hover:underline hover:text-blue-600 truncate max-w-[80px]">
-                              {getUserDisplayName(p.author)}
-                            </button> 
-                            <span>| 🕒 {p.time ? p.time.split(' ')[0] : ""}</span> 
-                            <span>| 👀 {p.views}</span> 
-                            <span>| {currentView==="핫딜 커뮤니티" ? `🔥 ${p.thermoVotes?.hot||0}` : `👍 ${p.upvotes}`}</span>
-                          </div>
+                      <div key={p.id} className="hover:bg-slate-50/80 transition-colors border-b border-slate-100 last:border-none rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <span className="inline-block text-[11px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg mr-2 mb-1.5">{p.subCategory || "일반"}</span>
+                          <button onClick={()=>handleViewPost(p.id, p.category)} className="text-sm font-bold text-slate-800 hover:text-blue-600 block text-left truncate w-full">
+                            {titleStr}{p.image || p.images?.length > 0 ? " 🖼️" : ""}
+                          </button>
                         </div>
-                        <hr className="m-0 border-t border-slate-200" />
+                        <div className="flex items-center text-xs text-slate-400 font-semibold gap-3 shrink-0">
+                          <button onClick={() => handleAuthorClick(p.author)} className="font-bold text-slate-600 hover:underline max-w-[90px] truncate">{getUserDisplayName(p.author)}</button>
+                          <span>👀 {p.views}</span>
+                          <span className={`font-bold ${currentView==="핫딜 커뮤니티"?"text-red-500":"text-blue-600"}`}>
+                            {currentView==="핫딜 커뮤니티" ? `🔥 ${p.thermoVotes?.hot||0}` : `👍 ${p.upvotes}`}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
-                  
-                  <div className="flex gap-2 mt-6 justify-center flex-wrap">
-                     {Array.from({length: totalPages}, (_,i)=>i+1).map(pageNum => (
-                       <div key={pageNum} className="w-[36px] md:w-[40px] h-[36px] md:h-[40px]">
-                         <button onClick={()=>setCurrentPage(pageNum)} className={currentPage === pageNum ? styles.primaryButton : styles.secondaryButton}>
-                           {pageNum}
-                         </button>
-                       </div>
-                     ))}
-                  </div>
+                </div>
+
+                <div className="flex gap-1.5 mt-8 justify-center flex-wrap">
+                   {Array.from({length: totalPages}, (_,i)=>i+1).map(pageNum => (
+                     <button 
+                       key={pageNum} 
+                       onClick={()=>setCurrentPage(pageNum)} 
+                       className={`w-9 h-9 rounded-xl text-xs font-bold transition-all ${currentPage === pageNum ? "bg-slate-900 text-white shadow-sm" : "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                     >
+                       {pageNum}
+                     </button>
+                   ))}
                 </div>
               </div>
             )}
 
-            {/* 🔍 게시글 상세 보기 */}
+            {/* 8. 게시글 상세 보기 */}
             {CATEGORIES.includes(currentView) && focusPostId && (
               (() => {
                 const post = posts.find(p => p.id === focusPostId);
-                if (!post) return <div className="p-4 bg-red-100 border border-red-300 text-red-700 rounded mb-4 text-sm md:text-base">게시글을 불러오고 있거나 존재하지 않습니다. <button onClick={()=>navigate(currentView)} className="underline ml-4 font-bold">목록으로</button></div>;
+                if (!post) return <div className="p-6 bg-white border rounded-3xl text-center text-sm font-bold text-slate-400">피드를 불러오는 중입니다...</div>;
                 
                 let isExpired = false;
                 try { isExpired = (!["공지사항", "요청"].includes(currentView)) && (new Date(post.endDate) < new Date(new Date().setHours(0,0,0,0)) || post.status === "종료"); } catch(e){}
                 const isHot = currentView === "핫딜 커뮤니티";
 
                 return (
-                  <div className="bg-white border border-slate-200 p-4 md:p-8 rounded-xl shadow-sm">
-                    <div className="h-10 w-full md:w-auto mb-4">
-                      <button onClick={()=>navigate(currentView)} className={styles.primaryButton}>⬅️ 목록으로 돌아가기</button>
+                  <div className="bg-white border border-slate-100 p-5 md:p-8 rounded-3xl shadow-sm space-y-6">
+                    <div>
+                      <button onClick={()=>navigate(currentView)} className="text-xs font-black text-slate-400 hover:text-slate-900 flex items-center gap-1">← 목록으로 돌아가기</button>
                     </div>
-                    <hr className="my-4 border-slate-200" />
                     
-                    <h1 className="text-xl md:text-2xl font-bold mb-4 text-slate-800 leading-snug">
-                      {isExpired && <span className="text-red-500">🔴[종료] </span>}
-                      [{post.subCategory||"일반"}] {post.title}
-                    </h1>
+                    <div className="space-y-3">
+                      <span className="inline-block text-xs font-black bg-blue-50 text-blue-600 px-3 py-1 rounded-xl">{post.subCategory||"일반"}</span>
+                      <h1 className="text-xl md:text-2xl font-black text-slate-900 leading-snug tracking-tight">
+                        {isExpired && <span className="text-slate-400">[마감] </span>}
+                        {post.title}
+                      </h1>
+                    </div>
                     
                     {isHot && post.mallName && (
-                      <h5 className="font-bold mb-4 text-xs md:text-sm bg-slate-50 border p-3 rounded text-slate-700 flex flex-wrap gap-2">
-                        <span>🛒 쇼핑몰: {post.mallName}</span>
-                        <span>| 💰 가격: <span className="text-red-500">{post.price}</span></span>
-                        <span>| 🚚 배송비: {post.shipping}</span>
-                      </h5>
+                      <div className="grid grid-cols-3 gap-2 bg-slate-50 p-4 rounded-2xl text-center text-xs font-bold text-slate-600 border border-slate-100">
+                        <div className="space-y-1"><p className="text-slate-400 text-[10px]">쇼핑몰</p><p className="truncate text-sm">{post.mallName}</p></div>
+                        <div className="space-y-1"><p className="text-slate-400 text-[10px]">가격</p><p className="text-red-500 truncate text-sm">{post.price}</p></div>
+                        <div className="space-y-1"><p className="text-slate-400 text-[10px]">배송비</p><p className="truncate text-sm">{post.shipping}</p></div>
+                      </div>
                     )}
                     
-                    <div className="flex flex-col md:flex-row text-xs md:text-sm text-slate-500 mb-4 gap-2 md:gap-0 items-start md:items-center">
-                      <div className="w-full md:flex-1 flex items-center gap-1 flex-wrap">
-                        <button onClick={() => handleAuthorClick(post.author)} className="font-bold text-slate-800 hover:underline hover:text-blue-600">
-                          {getUserDisplayName(post.author)}
-                        </button>
-                        &nbsp;|&nbsp; 🕒 {post.time} &nbsp;|&nbsp; 👀 조회수: {post.views}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between text-xs text-slate-400 font-semibold border-b border-slate-50 pb-4 gap-3">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleAuthorClick(post.author)} className="font-black text-slate-700 hover:underline">{getUserDisplayName(post.author)}</button>
+                        <span>•</span><span>🕒 {post.time}</span><span>•</span><span>👀 조회 {post.views}</span>
                       </div>
                       {post.link && (
-                        <div className="w-full md:w-auto h-9 md:h-10 mt-2 md:mt-0">
-                          <a href={post.link} target="_blank" rel="noreferrer" className={isExpired ? "flex justify-center items-center h-full px-4 bg-slate-200 border border-slate-300 text-slate-500 rounded pointer-events-none text-xs md:text-sm font-bold" : "flex justify-center items-center h-full px-4 bg-blue-500 hover:bg-blue-600 transition-colors text-white rounded text-xs md:text-sm font-bold shadow-sm"}>
-                            🔗 관련 링크 이동
-                          </a>
-                        </div>
+                        <a href={post.link} target="_blank" rel="noreferrer" className={isExpired ? "px-4 py-2 bg-slate-100 text-slate-400 rounded-xl text-xs font-bold pointer-events-none text-center" : "px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm text-center"}>
+                          🔗 구매/이동 링크
+                        </a>
                       )}
                     </div>
                     
-                    <hr className="mb-4 border-slate-200" />
-                    
-                    <div className="flex flex-col gap-4 mb-4">
-                      {post.images && post.images.length > 0 ? (
-                        post.images.map((imgUrl: string, idx: number) => (
-                          <img key={idx} src={imgUrl} className="w-full rounded shadow-sm object-contain" alt={`attachment-${idx}`} />
-                        ))
-                      ) : (
-                        post.image && <img src={post.image} className="w-full rounded shadow-sm object-contain" alt="attachment-legacy" />
-                      )}
+                    <div className="space-y-4">
+                      {post.images?.map((imgUrl: string, idx: number) => (
+                        <img key={idx} src={imgUrl} className="w-full rounded-2xl border border-slate-100 object-contain max-h-[600px]" alt="" />
+                      )) || (post.image && <img src={post.image} className="w-full rounded-2xl border border-slate-100 object-contain max-h-[600px]" alt="" />)}
                     </div>
 
-                    <div className="whitespace-pre-wrap leading-relaxed text-[14px] md:text-[15px] mb-6 text-slate-800 break-words overflow-hidden">{post.content}</div>
+                    <div className="whitespace-pre-wrap leading-relaxed text-[15px] text-slate-800 tracking-tight break-words py-4">{post.content}</div>
                     
-                    <hr className="mb-4 border-slate-200" />
-
-                    <div className="flex flex-wrap gap-2 mb-4 h-auto md:h-10">
+                    <div className="flex flex-wrap gap-2 pt-6 justify-center">
                       {isHot ? (
                         <>
-                          <div className="w-[31%] md:flex-1 h-10">
-                            <button onClick={() => {
-                              if(!auth.loggedIn) return alert("로그인 필요");
-                              let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) };
-                              let newBy = { ...(post.thermoVotedBy || {}) };
-                              let newUpvotes = post.upvotes;
-                              
-                              if(newBy[auth.userId] === "hot") { newV.hot--; delete newBy[auth.userId]; newUpvotes--; } 
-                              else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.hot++; newBy[auth.userId]="hot"; newUpvotes++; }
-                              
-                              setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy, upvotes: newUpvotes} : p));
-                              syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy, upvotes: newUpvotes });
-                            }} className={post.thermoVotedBy?.[auth.userId]==="hot" ? "bg-orange-500 text-white font-bold rounded flex justify-center items-center h-full w-full shadow-sm text-xs md:text-sm" : `${styles.secondaryButton} text-xs md:text-sm px-1`}>
-                              🔥 역대급 ({post.thermoVotes?.hot||0})
-                            </button>
-                          </div>
-                          <div className="w-[31%] md:flex-1 h-10">
-                            <button onClick={() => {
-                              if(!auth.loggedIn) return alert("로그인 필요");
-                              let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) };
-                              let newBy = { ...(post.thermoVotedBy || {}) };
-                              if(newBy[auth.userId] === "soso") { newV.soso--; delete newBy[auth.userId]; } 
-                              else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.soso++; newBy[auth.userId]="soso"; }
-                              setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy} : p));
-                              syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy });
-                            }} className={post.thermoVotedBy?.[auth.userId]==="soso" ? "bg-slate-600 text-white font-bold rounded flex justify-center items-center h-full w-full shadow-sm text-xs md:text-sm" : `${styles.secondaryButton} text-xs md:text-sm px-1`}>
-                              🤔 애매함 ({post.thermoVotes?.soso||0})
-                            </button>
-                          </div>
-                          <div className="w-[31%] md:flex-1 h-10">
-                            <button onClick={() => {
-                              if(!auth.loggedIn) return alert("로그인 필요");
-                              let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) };
-                              let newBy = { ...(post.thermoVotedBy || {}) };
-                              if(newBy[auth.userId] === "cold") { newV.cold--; delete newBy[auth.userId]; } 
-                              else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.cold++; newBy[auth.userId]="cold"; }
-                              setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy} : p));
-                              syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy });
-                            }} className={post.thermoVotedBy?.[auth.userId]==="cold" ? "bg-blue-500 text-white font-bold rounded flex justify-center items-center h-full w-full shadow-sm text-xs md:text-sm" : `${styles.secondaryButton} text-xs md:text-sm px-1`}>
-                              🥶 비쌈 ({post.thermoVotes?.cold||0})
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="w-full md:flex-1 h-10">
                           <button onClick={() => {
                             if(!auth.loggedIn) return alert("로그인 필요");
-                            const isUp = post.upvotedBy?.includes(auth.userId);
-                            const newUps = isUp ? post.upvotes - 1 : post.upvotes + 1;
-                            const newUpBy = isUp ? post.upvotedBy.filter((u:any)=>u!==auth.userId) : [...(post.upvotedBy||[]), auth.userId];
-                            setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, upvotes: newUps, upvotedBy: newUpBy} : p));
-                            syncUpdateToDB(post.id, { upvotes: newUps, upvotedBy: newUpBy });
-                          }} className={post.upvotedBy?.includes(auth.userId) ? styles.primaryButton : styles.secondaryButton}>
-                            {post.upvotedBy?.includes(auth.userId) ? `👍 추천 취소 (${post.upvotes})` : `👍 추천 (${post.upvotes})`}
+                            let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) }, newBy = { ...(post.thermoVotedBy || {}) }, newUps = post.upvotes;
+                            if(newBy[auth.userId] === "hot") { newV.hot--; delete newBy[auth.userId]; newUps--; } 
+                            else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.hot++; newBy[auth.userId]="hot"; newUps++; }
+                            setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy, upvotes: newUps} : p));
+                            syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy, upvotes: newUps });
+                          }} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="hot" ? "bg-orange-500 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                            🔥 대박이다 ({post.thermoVotes?.hot||0})
                           </button>
-                        </div>
-                      )}
-                      
-                      <div className="w-[48%] md:flex-1 h-10">
+                          
+                          <button onClick={() => {
+                            if(!auth.loggedIn) return alert("로그인 필요");
+                            let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) }, newBy = { ...(post.thermoVotedBy || {}) };
+                            if(newBy[auth.userId] === "soso") { newV.soso--; delete newBy[auth.userId]; } 
+                            else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.soso++; newBy[auth.userId]="soso"; }
+                            setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy} : p));
+                            syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy });
+                          }} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="soso" ? "bg-slate-700 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                            🤔 애매함 ({post.thermoVotes?.soso||0})
+                          </button>
+
+                          <button onClick={() => {
+                            if(!auth.loggedIn) return alert("로그인 필요");
+                            let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) }, newBy = { ...(post.thermoVotedBy || {}) };
+                            if(newBy[auth.userId] === "cold") { newV.cold--; delete newBy[auth.userId]; } 
+                            else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.cold++; newBy[auth.userId]="cold"; }
+                            setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy} : p));
+                            syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy });
+                          }} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="cold" ? "bg-blue-500 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                            🥶 별로임 ({post.thermoVotes?.cold||0})
+                          </button>
+                        </>
+                      ) : (
                         <button onClick={() => {
                           if(!auth.loggedIn) return alert("로그인 필요");
-                          const isScrap = post.scrappedBy?.includes(auth.userId);
-                          const newScrap = isScrap ? post.scrappedBy.filter((u:any)=>u!==auth.userId) : [...(post.scrappedBy||[]), auth.userId];
-                          setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, scrappedBy: newScrap} : p));
-                          syncUpdateToDB(post.id, { scrappedBy: newScrap });
-                        }} className={post.scrappedBy?.includes(auth.userId) ? "bg-yellow-400 text-slate-800 font-bold rounded flex justify-center items-center h-full w-full shadow-sm text-xs md:text-sm" : `${styles.secondaryButton} text-xs md:text-sm`}>
-                          {post.scrappedBy?.includes(auth.userId) ? "🌟 스크랩 취소" : "⭐ 스크랩"}
+                          const isUp = post.upvotedBy?.includes(auth.userId);
+                          const newUps = isUp ? post.upvotes - 1 : post.upvotes + 1;
+                          const newUpBy = isUp ? post.upvotedBy.filter((u:any)=>u!==auth.userId) : [...(post.upvotedBy||[]), auth.userId];
+                          setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, upvotes: newUps, upvotedBy: newUpBy} : p));
+                          syncUpdateToDB(post.id, { upvotes: newUps, upvotedBy: newUpBy });
+                        }} className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all ${post.upvotedBy?.includes(auth.userId) ? "bg-blue-600 text-white" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                          {post.upvotedBy?.includes(auth.userId) ? `👍 추천 취소됨 (${post.upvotes})` : `👍 유용해요 (${post.upvotes})`}
                         </button>
-                      </div>
+                      )}
                       
-                      <div className="w-[48%] md:flex-1 h-10">
-                        <button onClick={async () => {
-                          if(!auth.loggedIn) return alert("로그인 필요");
-                          const isRep = post.reportedBy?.includes(auth.userId);
-                          const newRep = isRep ? post.reportedBy.filter((u:any)=>u!==auth.userId) : [...(post.reportedBy||[]), auth.userId];
-                          if(newRep.length >= 10) { 
-                            alert("신고 10회 누적으로 글이 블라인드 처리되었습니다."); 
-                            setPosts((prev: any[]) => prev.filter(p=>p.id!==post.id));
-                            if (post.id >= 10000) await supabase.from('deals').delete().eq('id', post.id - 10000);
-                            navigate(currentView); 
-                          } else {
-                            setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, reportedBy: newRep} : p));
-                            syncUpdateToDB(post.id, { reportedBy: newRep });
-                          }
-                        }} className="bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 flex justify-center items-center h-full w-full font-bold transition-colors text-xs md:text-sm">
-                          🚨 신고 ({post.reportedBy?.length||0})
-                        </button>
-                      </div>
-                      
+                      <button onClick={() => {
+                        if(!auth.loggedIn) return alert("로그인 필요");
+                        const isScrap = post.scrappedBy?.includes(auth.userId);
+                        const newScrap = isScrap ? post.scrappedBy.filter((u:any)=>u!==auth.userId) : [...(post.scrappedBy||[]), auth.userId];
+                        setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, scrappedBy: newScrap} : p));
+                        syncUpdateToDB(post.id, { scrappedBy: newScrap });
+                      }} className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all ${post.scrappedBy?.includes(auth.userId) ? "bg-yellow-400 text-slate-800" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                        ⭐ 스크랩
+                      </button>
+                    </div>
+                    
+                    <div className="flex gap-2 justify-center pt-2">
+                      <button onClick={async () => {
+                        if(!auth.loggedIn) return alert("로그인 필요");
+                        const isRep = post.reportedBy?.includes(auth.userId);
+                        const newRep = isRep ? post.reportedBy.filter((u:any)=>u!==auth.userId) : [...(post.reportedBy||[]), auth.userId];
+                        if(newRep.length >= 10) { 
+                          alert("신고 10회 누적으로 글이 블라인드 처리되었습니다."); 
+                          setPosts((prev: any[]) => prev.filter(p=>p.id!==post.id));
+                          if (post.id >= 10000) await supabase.from('deals').delete().eq('id', post.id - 10000);
+                          navigate(currentView); 
+                        } else {
+                          setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, reportedBy: newRep} : p));
+                          syncUpdateToDB(post.id, { reportedBy: newRep });
+                        }
+                      }} className="px-4 py-2 bg-red-50 text-red-500 text-[11px] font-bold rounded-xl hover:bg-red-100 transition-colors">
+                        🚨 신고하기 ({post.reportedBy?.length||0})
+                      </button>
+
                       {(auth.userRole === "admin" || auth.userId === post.author) && (
                         <>
-                          <div className="w-[48%] md:flex-1 h-10">
-                            <button onClick={()=>{
-                              setWriteTitle(post.title); setWriteContent(post.content); setWriteLink(post.link); setWriteImages(post.images || []); setWriteEndDate(post.endDate||""); setWriteMall(post.mallName||""); setWritePrice(post.price||""); setWriteShipping(post.shipping||"무료배송"); setEditingPostId(post.id); setCurrentView("글수정"); window.scrollTo(0,0);
-                            }} className="bg-amber-500 hover:bg-amber-600 text-white font-bold rounded flex justify-center items-center h-full w-full transition-colors text-xs md:text-sm">
-                              📝 수정
-                            </button>
-                          </div>
-                          <div className="w-[48%] md:flex-1 h-10">
-                            <button onClick={async ()=>{ 
-                              if (window.confirm("정말로 이 게시글을 삭제하시겠습니까?\n삭제된 글은 복구할 수 없습니다.")) {
-                                setPosts((prev: any[]) => prev.filter(p=>p.id!==post.id)); 
-                                if (post.id >= 10000) await supabase.from('deals').delete().eq('id', post.id - 10000);
-                                navigate(currentView); 
-                              }
-                            }} className="bg-red-600 hover:bg-red-700 text-white font-bold rounded flex justify-center items-center h-full w-full transition-colors text-xs md:text-sm">
-                              🗑️ 삭제
-                            </button>
-                          </div>
+                          <button onClick={()=>{
+                            setWriteTitle(post.title); setWriteContent(post.content); setWriteLink(post.link); setWriteImages(post.images || []); setWriteEndDate(post.endDate||""); setWriteMall(post.mallName||""); setWritePrice(post.price||""); setWriteShipping(post.shipping||"무료배송"); setEditingPostId(post.id); setCurrentView("글수정"); window.scrollTo(0,0);
+                          }} className="px-4 py-2 bg-slate-100 text-slate-700 text-[11px] font-bold rounded-xl hover:bg-slate-200 transition-colors">수정</button>
+                          <button onClick={async ()=>{ 
+                            if (window.confirm("삭제하시겠습니까?")) {
+                              setPosts((prev: any[]) => prev.filter(p=>p.id!==post.id)); 
+                              if (post.id >= 10000) await supabase.from('deals').delete().eq('id', post.id - 10000);
+                              navigate(currentView); 
+                            }
+                          }} className="px-4 py-2 bg-red-600 text-white text-[11px] font-bold rounded-xl hover:bg-red-700 transition-colors">삭제</button>
                         </>
                       )}
                     </div>
 
-                    <hr className="mb-6 border-slate-200" />
-                    <h4 className="font-bold text-base md:text-lg mb-4 text-slate-800">💬 댓글 ({post.comments?.length || 0})</h4>
-                    <div className="mb-6">
-                      {post.comments?.map((cmt: any) => (
-                        <div key={cmt.id} className="mb-4 bg-slate-50 border border-slate-200 p-3 md:p-4 rounded-lg">
-                          <div className="text-[13px] md:text-[14px] text-slate-800 flex items-center gap-1 flex-wrap">
-                            <button onClick={() => handleAuthorClick(cmt.user)} className="font-bold text-slate-700 hover:underline hover:text-blue-600">
-                              {getUserDisplayName(cmt.user)}
-                            </button>: {cmt.text} <span className="text-slate-400 text-[10px] md:text-xs ml-1 md:ml-2">({cmt.time})</span>
-                            
-                            {(auth.userId === cmt.user || auth.userRole === "admin") && (
-                              <button onClick={() => {
-                                if (window.confirm("정말로 이 댓글을 삭제하시겠습니까?")) {
-                                  const newComments = post.comments.filter((c:any) => c.id !== cmt.id);
-                                  setPosts((prev: any[]) => prev.map(p => p.id === post.id ? {...p, comments: newComments} : p));
-                                  syncUpdateToDB(post.id, { comments: newComments });
-                                }
-                              }} className="text-[10px] md:text-xs text-red-500 hover:text-red-700 ml-2 font-bold">
-                                [삭제]
-                              </button>
-                            )}
-                          </div>
-                          
-                          {cmt.replies?.map((rep: any, rIdx: number) => (
-                            <div key={rIdx} className="ml-4 md:ml-6 mt-2 text-[12px] md:text-[13px] border-l-2 border-slate-300 pl-2 md:pl-3 text-slate-700 flex items-center gap-1 flex-wrap">
-                              ↳ <button onClick={() => handleAuthorClick(rep.user)} className="font-bold text-slate-600 hover:underline hover:text-blue-600">
-                                {getUserDisplayName(rep.user)}
-                              </button>: {rep.text} <span className="text-slate-400 text-[10px] md:text-xs ml-1 md:ml-2">({rep.time})</span>
-                              
-                              {(auth.userId === rep.user || auth.userRole === "admin") && (
+                    <div className="pt-8 border-t border-slate-100 space-y-4">
+                      <h4 className="font-black text-sm text-slate-800">💬 피드백 ({post.comments?.length || 0})</h4>
+                      <div className="space-y-3">
+                        {post.comments?.map((cmt: any) => (
+                          <div key={cmt.id} className="bg-slate-50/70 rounded-2xl p-4 border border-slate-100/60 text-sm">
+                            <div className="text-slate-800 leading-relaxed flex flex-wrap items-center gap-1">
+                              <button onClick={() => handleAuthorClick(cmt.user)} className="font-black text-slate-700 hover:underline mr-1.5">{getUserDisplayName(cmt.user)}</button>
+                              : {cmt.text}
+                              <span className="text-slate-400 text-[10px] ml-2">({cmt.time})</span>
+                              {(auth.userId === cmt.user || auth.userRole === "admin") && (
                                 <button onClick={() => {
-                                  if (window.confirm("정말로 이 답글을 삭제하시겠습니까?")) {
-                                    const newReplies = cmt.replies.filter((_:any, idx:number) => idx !== rIdx);
-                                    const newComments = post.comments.map((c:any) => c.id === cmt.id ? {...c, replies: newReplies} : c);
+                                  if (window.confirm("정말로 이 댓글을 삭제하시겠습니까?")) {
+                                    const newComments = post.comments.filter((c:any) => c.id !== cmt.id);
                                     setPosts((prev: any[]) => prev.map(p => p.id === post.id ? {...p, comments: newComments} : p));
                                     syncUpdateToDB(post.id, { comments: newComments });
                                   }
-                                }} className="text-[10px] md:text-xs text-red-500 hover:text-red-700 ml-2 font-bold">
-                                  [삭제]
-                                </button>
+                                }} className="text-[10px] text-red-500 hover:text-red-700 ml-2 font-bold bg-white px-2 py-0.5 rounded-md border border-red-100">삭제</button>
                               )}
                             </div>
-                          ))}
-                          
-                          {auth.loggedIn && (
-                            <div className="ml-4 md:ml-6 mt-3">
-                              <button onClick={()=>setReplyOpen((prev:any)=>({...prev, [`${post.id}_${cmt.id}`]: !prev[`${post.id}_${cmt.id}`]}))} className="text-[11px] md:text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors mb-2">
-                                ↳ '{getUserDisplayName(cmt.user)}'님에게 답글 달기
-                              </button>
-                              
-                              {replyOpen[`${post.id}_${cmt.id}`] && (
-                                <div className="flex flex-col md:flex-row gap-2">
-                                  <div className="w-full md:flex-1 h-9">
-                                    <input type="text" placeholder="답글 내용" value={replyInputs[`${post.id}_${cmt.id}`] || ""} onChange={(e)=>setReplyInputs({...replyInputs, [`${post.id}_${cmt.id}`]: e.target.value})} className="w-full h-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" />
-                                  </div>
-                                  <div className="w-full md:w-[80px] h-9">
+                            
+                            {cmt.replies?.map((rep: any, rIdx: number) => (
+                              <div key={rIdx} className="ml-4 mt-2 p-3 bg-white border border-slate-100 rounded-xl text-xs text-slate-700 flex flex-wrap items-center gap-1">
+                                ↳ <button onClick={() => handleAuthorClick(rep.user)} className="font-black text-slate-600 hover:underline mr-1">{getUserDisplayName(rep.user)}</button>: {rep.text}
+                                <span className="text-slate-400 text-[10px] ml-2">({rep.time})</span>
+                                {(auth.userId === rep.user || auth.userRole === "admin") && (
+                                  <button onClick={() => {
+                                    if (window.confirm("정말로 이 답글을 삭제하시겠습니까?")) {
+                                      const newReplies = cmt.replies.filter((_:any, idx:number) => idx !== rIdx);
+                                      const newComments = post.comments.map((c:any) => c.id === cmt.id ? {...c, replies: newReplies} : c);
+                                      setPosts((prev: any[]) => prev.map(p => p.id === post.id ? {...p, comments: newComments} : p));
+                                      syncUpdateToDB(post.id, { comments: newComments });
+                                    }
+                                  }} className="text-[10px] text-red-500 hover:text-red-700 ml-2 font-bold bg-slate-50 px-2 py-0.5 rounded-md border border-red-100">삭제</button>
+                                )}
+                              </div>
+                            ))}
+
+                            {auth.loggedIn && (
+                              <div className="ml-4 mt-3">
+                                <button onClick={()=>setReplyOpen((prev:any)=>({...prev, [`${post.id}_${cmt.id}`]: !prev[`${post.id}_${cmt.id}`]}))} className="text-[11px] font-bold text-slate-500 hover:text-blue-600 transition-colors mb-2">
+                                  ↳ '{getUserDisplayName(cmt.user)}'님에게 답글 달기
+                                </button>
+                                {replyOpen[`${post.id}_${cmt.id}`] && (
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="답글 내용" value={replyInputs[`${post.id}_${cmt.id}`] || ""} onChange={(e)=>setReplyInputs({...replyInputs, [`${post.id}_${cmt.id}`]: e.target.value})} className="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-400 transition-all" />
                                     <button onClick={()=>{
                                       if(!replyInputs[`${post.id}_${cmt.id}`]) return;
                                       const newComments = post.comments.map((c:any)=>c.id===cmt.id ? {...c, replies: [...(c.replies||[]), {user: auth.userId, text: replyInputs[`${post.id}_${cmt.id}`], time: new Date().toISOString().replace('T', ' ').slice(0, 16)}]} : c);
@@ -1002,229 +900,195 @@ export default function Home() {
                                       setReplyInputs({...replyInputs, [`${post.id}_${cmt.id}`]: ""}); 
                                       setReplyOpen((prev:any)=>({...prev, [`${post.id}_${cmt.id}`]: false})); 
                                       addNotify(cmt.user, "새로운 답글이 달렸습니다.", post.id);
-                                    }} className={styles.primaryButton} style={{fontSize:'12px'}}>답글 등록</button>
+                                    }} className="px-4 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 shrink-0">등록</button>
                                   </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    
-                    {auth.loggedIn && (
-                      <div className="border-t border-slate-200 pt-4">
-                        <p className="font-bold mb-2 text-xs md:text-sm text-slate-800">새 댓글 작성</p>
-                        <div className="flex flex-col md:flex-row gap-2">
-                          <div className="w-full md:w-4/5 h-10">
-                            <input type="text" placeholder="타인을 존중하는 깨끗한 댓글 문화를 만듭시다." value={commentInput} onChange={(e)=>setCommentInput(e.target.value)} className="w-full h-full p-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow text-sm" />
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <div className="w-full md:w-1/5 h-10">
-                            <button onClick={()=>{
-                              if(!commentInput) return;
-                              const newComments = [...(post.comments||[]), {id: Date.now(), user: auth.userId, text: commentInput, time: new Date().toISOString().replace('T', ' ').slice(0, 16), replies: []}];
-                              setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, comments: newComments} : p));
-                              syncUpdateToDB(post.id, { comments: newComments });
-                              setCommentInput(""); 
-                              addNotify(post.author, "게시글에 새 댓글이 달렸습니다.", post.id); 
-                            }} className={styles.primaryButton}>댓글 등록</button>
-                          </div>
-                        </div>
+                        ))}
                       </div>
-                    )}
+
+                      {auth.loggedIn && (
+                        <div className="flex gap-2 pt-4">
+                          <input type="text" placeholder="댓글로 소통을 시작해 보세요." value={commentInput} onChange={(e)=>setCommentInput(e.target.value)} className="flex-1 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:border-slate-400 transition-all" />
+                          <button onClick={()=>{
+                            if(!commentInput) return;
+                            const newComments = [...(post.comments||[]), {id: Date.now(), user: auth.userId, text: commentInput, time: new Date().toISOString().replace('T', ' ').slice(0, 16), replies: []}];
+                            setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, comments: newComments} : p));
+                            syncUpdateToDB(post.id, { comments: newComments }); setCommentInput("");
+                            addNotify(post.author, "게시글에 새 피드백이 쌓였습니다.", post.id); 
+                          }} className="px-6 py-3.5 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 shrink-0">작성</button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })()
             )}
 
-            {/* 🚀 신규: 작성자 활동 조회 화면 */}
+            {/* 9. 작성자 조회 화면 (댓글 조회 완벽 복원) */}
             {currentView === "작성자 조회" && (
-              <div className="bg-white border border-slate-200 p-4 md:p-8 rounded-xl shadow-sm">
-                <h1 className="text-xl md:text-2xl font-bold mb-4 text-slate-800">👤 {getUserDisplayName(selectedTargetUser)} 님의 활동 조회</h1>
-                <div className="h-10 mb-6 w-[120px] md:max-w-[150px]">
-                  <button onClick={() => navigate("로비")} className={styles.secondaryButton}>⬅️ 로비로 이동</button>
+              <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-6">
+                <div className="flex justify-between items-center">
+                  <h1 className="text-xl font-black tracking-tight">👤 {getUserDisplayName(selectedTargetUser)} 님의 프로필</h1>
+                  <button onClick={() => navigate("로비")} className="text-xs font-bold text-slate-400 hover:text-slate-900 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">로비로</button>
                 </div>
-                <hr className="mb-6 border-slate-200"/>
+                
+                <div className="space-y-4">
+                  <h3 className="font-bold text-sm text-slate-800">📝 작성한 게시글</h3>
+                  {profilesDb[selectedTargetUser]?.share_posts ? (
+                    (() => {
+                      const userPosts = posts.filter(p => p.author === selectedTargetUser);
+                      if(userPosts.length === 0) return <p className="text-xs text-slate-400 p-2 font-semibold">작성한 글이 없습니다.</p>;
+                      return userPosts.map(p => (
+                        <div key={p.id} onClick={() => handleViewPost(p.id, p.category)} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 hover:bg-slate-100 cursor-pointer text-sm font-bold truncate transition-colors">
+                          [{p.category}] {p.title}
+                        </div>
+                      ));
+                    })()
+                  ) : <p className="text-xs text-slate-400 font-bold bg-slate-50 p-4 rounded-xl border border-slate-100">🔒 활동 내역을 비공개로 설정한 유저입니다.</p>}
+                </div>
 
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="font-bold text-base md:text-lg mb-2 text-slate-800">📝 작성한 게시글 목록</h3>
-                    {profilesDb[selectedTargetUser]?.share_posts ? (
-                      (() => {
-                        const userPosts = posts.filter(p => p.author === selectedTargetUser);
-                        if(userPosts.length === 0) return <p className="text-xs md:text-sm text-slate-500 p-2">작성한 글이 없습니다.</p>;
-                        return userPosts.map(p => (
-                          <div key={p.id} onClick={() => handleViewPost(p.id, p.category)} className="border border-slate-300 p-3 rounded-lg bg-slate-50 mb-2 hover:bg-blue-50 cursor-pointer text-sm md:text-base">
-                            <b>[{p.category}]</b> {p.title}
-                          </div>
-                        ));
-                      })()
-                    ) : (
-                      <div className="p-3 bg-red-50 text-red-600 border border-red-100 rounded-lg text-xs md:text-sm font-bold">🔒 작성자가 게시글 조회를 비허용(비공개)했습니다.</div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h3 className="font-bold text-base md:text-lg mb-2 text-slate-800">💬 작성한 댓글 목록</h3>
-                    {profilesDb[selectedTargetUser]?.share_comments ? (
-                      (() => {
-                        const userCmts: any[] = [];
-                        posts.forEach(p => {
-                          p.comments?.forEach((c: any) => {
-                            if(c.user === selectedTargetUser) userCmts.push({ post: p, cmt: c });
-                          });
-                        });
-                        if(userCmts.length === 0) return <p className="text-xs md:text-sm text-slate-500 p-2">작성한 댓글이 없습니다.</p>;
-                        return userCmts.map((item, idx) => (
-                          <div key={idx} onClick={() => handleViewPost(item.post.id, item.post.category)} className="border border-slate-300 p-3 rounded-lg bg-slate-50 mb-2 hover:bg-blue-50 cursor-pointer text-sm md:text-base">
-                            <b>💬 {item.cmt.text}</b>
-                            <p className="text-[11px] md:text-xs text-slate-400 mt-1">원문: {item.post.title}</p>
-                          </div>
-                        ));
-                      })()
-                    ) : (
-                      <div className="p-3 bg-red-50 text-red-600 border border-red-100 rounded-lg text-xs md:text-sm font-bold">🔒 작성자가 댓글 조회를 비허용(비공개)했습니다.</div>
-                    )}
-                  </div>
+                <div className="space-y-4 pt-6 border-t border-slate-100">
+                  <h3 className="font-bold text-sm text-slate-800">💬 작성한 댓글</h3>
+                  {profilesDb[selectedTargetUser]?.share_comments ? (
+                    (() => {
+                      const userCmts: any[] = [];
+                      posts.forEach(p => p.comments?.forEach((c: any) => { if(c.user === selectedTargetUser) userCmts.push({ post: p, cmt: c }); }));
+                      if(userCmts.length === 0) return <p className="text-xs text-slate-400 p-2 font-semibold">작성한 댓글이 없습니다.</p>;
+                      return userCmts.map((item, idx) => (
+                        <div key={idx} onClick={() => handleViewPost(item.post.id, item.post.category)} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 hover:bg-slate-100 cursor-pointer text-sm font-bold transition-colors">
+                          💬 {item.cmt.text}
+                          <p className="text-[11px] text-slate-400 mt-1.5 truncate font-normal">원문: {item.post.title}</p>
+                        </div>
+                      ));
+                    })()
+                  ) : <p className="text-xs text-slate-400 font-bold bg-slate-50 p-4 rounded-xl border border-slate-100">🔒 댓글 내역을 비공개로 설정한 유저입니다.</p>}
                 </div>
               </div>
             )}
 
-            {/* ✍️ 글쓰기 */}
+            {/* 10. 글쓰기 */}
             {currentView === "글쓰기" && (
-              <div className="border border-slate-300 p-4 md:p-8 rounded-xl bg-white shadow-sm mb-4">
-                <h1 className="text-2xl font-bold mb-6 text-slate-800">✍️ [{writingCategory}] 글 작성하기</h1>
+              <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-6">
+                <h1 className="text-xl font-black tracking-tight">✍️ [{writingCategory}] 새 글 쓰기</h1>
                 
-                <label className="block mb-2 font-bold text-sm text-slate-700">분류(말머리)</label>
-                <select value={writeSubCat} onChange={e=>setWriteSubCat(e.target.value)} className="w-full p-2 border border-slate-300 rounded mb-6 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow bg-white">
-                  {subCategories[writingCategory]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>) || <option value="일반">일반</option>}
-                </select>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1.5">말머리 선택</label>
+                  <select value={writeSubCat} onChange={e=>setWriteSubCat(e.target.value)} className="w-full p-3 border border-slate-200 rounded-2xl text-xs font-bold bg-white focus:outline-none">
+                    {subCategories[writingCategory]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>) || <option value="일반">일반</option>}
+                  </select>
+                </div>
                 
                 {writingCategory === "핫딜 커뮤니티" && (
-                  <div className="flex flex-col md:flex-row gap-4 mb-6">
-                    <div className="w-full md:flex-1">
-                      <label className="block font-bold mb-1 text-sm text-slate-700">🏢 쇼핑몰 이름</label>
-                      <input type="text" value={writeMall} onChange={e=>setWriteMall(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" placeholder="예: 쿠팡"/>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 mb-1">🏢 쇼핑몰</label>
+                      <input type="text" value={writeMall} onChange={e=>setWriteMall(e.target.value)} className="w-full p-3 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="쿠팡, G마켓 등"/>
                     </div>
-                    <div className="w-full md:flex-1">
-                      <label className="block font-bold mb-1 text-sm text-slate-700">💰 할인가격</label>
-                      <input type="text" value={writePrice} onChange={e=>setWritePrice(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" placeholder="예: 150,000원"/>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 mb-1">💰 할인가격</label>
+                      <input type="text" value={writePrice} onChange={e=>setWritePrice(e.target.value)} className="w-full p-3 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="최종 혜택가"/>
                     </div>
-                    <div className="w-full md:flex-1">
-                      <label className="block font-bold mb-1 text-sm text-slate-700">🚚 배송비</label>
-                      <select value={writeShipping} onChange={e=>setWriteShipping(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow bg-white">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 mb-1">🚚 배송 요건</label>
+                      <select value={writeShipping} onChange={e=>setWriteShipping(e.target.value)} className="w-full p-3 border border-slate-200 rounded-2xl text-xs font-bold bg-white focus:outline-none">
                         <option value="무료배송">무료배송</option><option value="유료배송">유료배송</option><option value="조건부 무료">조건부 무료</option><option value="기타">기타</option>
                       </select>
                     </div>
                   </div>
                 )}
                 
-                <label className="block mb-1 font-bold text-sm text-slate-700">글 제목</label>
-                <input type="text" value={writeTitle} onChange={e=>setWriteTitle(e.target.value)} className="w-full p-2 border border-slate-300 rounded mb-6 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" placeholder="제목을 입력하세요"/>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">글 제목</label>
+                  <input type="text" value={writeTitle} onChange={e=>setWriteTitle(e.target.value)} className="w-full p-3.5 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm focus:outline-none" placeholder="핵심 내용만 한눈에 들어오게 적어주세요"/>
+                </div>
                 
-                <label className="block mb-1 font-bold text-sm text-slate-700">글 내용</label>
-                <textarea rows={8} value={writeContent} onChange={e=>setWriteContent(e.target.value)} className="w-full p-2 border border-slate-300 rounded mb-6 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" placeholder="내용을 입력하세요"/>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">본문 내용</label>
+                  <textarea rows={6} value={writeContent} onChange={e=>setWriteContent(e.target.value)} className="w-full p-3.5 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm focus:outline-none" placeholder="할인 및 페이백 적용을 위한 꿀팁을 공유해 주세요"/>
+                </div>
                 
-                <label className="block mb-1 font-bold text-sm text-slate-700">📷 사진 첨부 (여러 장 선택 가능)</label>
-                <input type="file" multiple accept="image/jpeg, image/png, image/jpg" onChange={handleMultiImageUpload} className="w-full p-2 border border-slate-300 rounded mb-2 text-sm bg-slate-50"/>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">📷 이미지 첨부 (다중선택 가능)</label>
+                  <input type="file" multiple accept="image/*" onChange={handleMultiImageUpload} className="w-full p-3 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-xs cursor-pointer" />
+                  
+                  {writeImages.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto mt-4 p-3 bg-slate-50 border border-slate-100 rounded-2xl scrollbar-hide">
+                      {writeImages.map((img, idx) => (
+                        <div key={idx} className="relative w-20 h-20 flex-shrink-0 border rounded-xl overflow-hidden shadow-sm">
+                          <img src={img} className="w-full h-full object-cover" alt="preview" />
+                          <button onClick={() => {
+                            setWriteImages((prev: string[]) => prev.filter((_, i) => i !== idx));
+                            setWriteFiles((prev: File[]) => prev.filter((_, i) => i !== idx)); 
+                          }} className="absolute top-0 right-0 bg-slate-900/80 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-bl-lg font-bold">X</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 
-                {writeImages.length > 0 && (
-                  <div className="flex gap-2 overflow-x-auto mb-6 p-2 border border-slate-200 rounded scrollbar-hide">
-                    {writeImages.map((img, idx) => (
-                      <div key={idx} className="relative w-20 h-20 flex-shrink-0 border rounded overflow-hidden">
-                        <img src={img} className="w-full h-full object-cover" alt="preview" />
-                        <button onClick={() => {
-                          setWriteImages((prev: string[]) => prev.filter((_, i) => i !== idx));
-                          setWriteFiles((prev: File[]) => prev.filter((_, i) => i !== idx)); 
-                        }} className="absolute top-0 right-0 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-bl font-bold">X</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                <label className="block mb-1 font-bold text-sm text-slate-700 mt-4">🔗 관련 링크 주소</label>
-                <input type="text" value={writeLink} onChange={e=>setWriteLink(e.target.value)} className="w-full p-2 border border-slate-300 rounded mb-6 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" placeholder="URL을 입력하세요"/>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">🔗 구매/인증 주소 (선택)</label>
+                  <input type="text" value={writeLink} onChange={e=>setWriteLink(e.target.value)} className="w-full p-3.5 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm focus:outline-none" placeholder="https://..."/>
+                </div>
                 
                 {!["공지사항", "요청"].includes(writingCategory) && (
                   <div>
-                    <label className="block font-bold mb-1 text-sm text-slate-700">📆 핫딜/할인 마감일</label>
-                    <input type="date" value={writeEndDate} onChange={e=>setWriteEndDate(e.target.value)} className="w-full p-2 border border-slate-300 rounded mb-6 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow bg-white"/>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">📆 핫딜/할인 마감일</label>
+                    <input type="date" value={writeEndDate} onChange={e=>setWriteEndDate(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none cursor-pointer"/>
                   </div>
                 )}
                 
-                <div className="h-12">
+                <div className="pt-4">
                   <button disabled={isUploading} onClick={async ()=>{
-                    if(!writeTitle || !writeContent) return alert("제목과 내용을 모두 채워주세요!");
-                    
-                    setIsUploading(true);
-                    const uploadedUrls: string[] = [];
+                    if(!writeTitle || !writeContent) return alert("제목과 내용을 채워주세요.");
+                    setIsUploading(true); const uploadedUrls: string[] = [];
 
                     for (const file of writeFiles) {
                       const fileExt = file.name.split('.').pop();
                       const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-
                       const { error: uploadError } = await supabase.storage.from('images').upload(fileName, file);
-
                       if (!uploadError) {
                         const { data } = supabase.storage.from('images').getPublicUrl(fileName);
                         uploadedUrls.push(data.publicUrl);
-                      } else {
-                        console.error("업로드 에러:", uploadError);
                       }
                     }
                     
                     const { error } = await supabase.from('deals').insert([{ 
-                      title: writeTitle, 
-                      content: writeContent, 
-                      price: writePrice, 
-                      url: writeLink, 
-                      category: writingCategory, 
-                      sub_category: writeSubCat, 
-                      author: auth.userId || "익명회원", 
-                      mall_name: writeMall, 
-                      shipping: writeShipping, 
-                      end_date: writeEndDate,
-                      image: uploadedUrls[0] || null, 
-                      images: uploadedUrls 
+                      title: writeTitle, content: writeContent, price: writePrice, url: writeLink, category: writingCategory, sub_category: writeSubCat, author: auth.userId || "익명회원", mall_name: writeMall, shipping: writeShipping, end_date: writeEndDate, image: uploadedUrls[0] || null, images: uploadedUrls 
                     }]);
-                    
                     setIsUploading(false);
-
-                    if(error) { 
-                      console.warn(error); 
-                      alert("서버 오류가 발생했습니다."); 
-                    } else { 
-                      alert("✅ 성공적으로 게시글이 등록되었습니다."); 
-                      fetchTargetData(); 
-                      navigate(writingCategory);
-                    }
-                  }} className={styles.primaryButton}>{isUploading ? "⏳ 사진 업로드 중..." : "🚀 게시글 등록"}</button>
+                    if(error) alert("업로드 중 통신 실패");
+                    else { alert("✅ 업로드되어 피드에 성공적으로 누적되었습니다!"); fetchTargetData(); navigate(writingCategory); }
+                  }} className={styles.primaryButton}>{isUploading ? "데이터 동기화 중..." : "등록하기"}</button>
                 </div>
               </div>
             )}
 
-            {/* 📝 글수정 */}
+            {/* 11. 글수정 */}
             {currentView === "글수정" && (
-              <div className="border border-slate-300 p-4 md:p-8 rounded-xl bg-white shadow-sm mb-4">
-                <h1 className="text-2xl font-bold mb-6 text-slate-800">📝 글 수정하기</h1>
+              <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-6">
+                <h1 className="text-xl font-black mb-4 tracking-tight">📝 게시글 수정</h1>
                 {(() => {
                   const post_to_edit = posts.find((p:any) => p.id === editingPostId);
                   if(!post_to_edit) return null;
                   return (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                       {post_to_edit.category === "핫딜 커뮤니티" && (
-                        <div className="flex flex-col md:flex-row gap-4 mb-4">
-                          <div className="w-full md:flex-1">
-                            <label className="block font-bold mb-1 text-sm text-slate-700">🏢 쇼핑몰 이름</label>
-                            <input type="text" value={writeMall} onChange={e=>setWriteMall(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"/>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-400 mb-1">🏢 쇼핑몰 이름</label>
+                            <input type="text" value={writeMall} onChange={e=>setWriteMall(e.target.value)} className="w-full p-3 border border-slate-200 rounded-2xl text-xs focus:outline-none"/>
                           </div>
-                          <div className="w-full md:flex-1">
-                            <label className="block font-bold mb-1 text-sm text-slate-700">💰 할인가격</label>
-                            <input type="text" value={writePrice} onChange={e=>setWritePrice(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"/>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-400 mb-1">💰 할인가격</label>
+                            <input type="text" value={writePrice} onChange={e=>setWritePrice(e.target.value)} className="w-full p-3 border border-slate-200 rounded-2xl text-xs focus:outline-none"/>
                           </div>
-                          <div className="w-full md:flex-1">
-                            <label className="block font-bold mb-1 text-sm text-slate-700">🚚 배송비</label>
-                            <select value={writeShipping} onChange={e=>setWriteShipping(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow bg-white">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-400 mb-1">🚚 배송비</label>
+                            <select value={writeShipping} onChange={e=>setWriteShipping(e.target.value)} className="w-full p-3 border border-slate-200 rounded-2xl text-xs bg-white focus:outline-none">
                               <option value="무료배송">무료배송</option><option value="유료배송">유료배송</option><option value="조건부 무료">조건부 무료</option><option value="기타">기타</option>
                             </select>
                           </div>
@@ -1232,45 +1096,45 @@ export default function Home() {
                       )}
                       
                       <div>
-                        <label className="block font-bold mb-1 text-sm text-slate-700">글 제목</label>
-                        <input type="text" value={writeTitle} onChange={e=>setWriteTitle(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"/>
+                        <label className="block text-xs font-bold text-slate-400 mb-1">글 제목</label>
+                        <input type="text" value={writeTitle} onChange={e=>setWriteTitle(e.target.value)} className="w-full p-3.5 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm focus:outline-none" />
                       </div>
                       
                       <div>
-                        <label className="block font-bold mb-1 text-sm text-slate-700">글 내용</label>
-                        <textarea rows={8} value={writeContent} onChange={e=>setWriteContent(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"/>
+                        <label className="block text-xs font-bold text-slate-400 mb-1">글 내용</label>
+                        <textarea rows={6} value={writeContent} onChange={e=>setWriteContent(e.target.value)} className="w-full p-3.5 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm focus:outline-none" />
                       </div>
                       
                       <div>
-                        <label className="block font-bold mb-1 text-sm text-slate-700">📷 사진 재첨부 (선택 시 기존 사진 덮어쓰기)</label>
-                        <input type="file" multiple accept="image/jpeg, image/png, image/jpg" onChange={handleMultiImageUpload} className="w-full p-2 border border-slate-300 rounded text-sm bg-slate-50"/>
+                        <label className="block text-xs font-bold text-slate-400 mb-1">📷 사진 재첨부 (선택 시 기존 사진 덮어쓰기)</label>
+                        <input type="file" multiple accept="image/*" onChange={handleMultiImageUpload} className="w-full p-3 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-xs cursor-pointer" />
                         
                         {writeImages.length > 0 && (
-                          <div className="flex gap-2 overflow-x-auto mt-2 p-2 border border-slate-200 rounded scrollbar-hide">
+                          <div className="flex gap-2 overflow-x-auto mt-4 p-3 bg-slate-50 border border-slate-100 rounded-2xl scrollbar-hide">
                             {writeImages.map((img, idx) => (
-                              <div key={idx} className="relative w-20 h-20 flex-shrink-0 border rounded overflow-hidden">
+                              <div key={idx} className="relative w-20 h-20 flex-shrink-0 border rounded-xl overflow-hidden shadow-sm">
                                 <img src={img} className="w-full h-full object-cover" alt="preview" />
                                 <button onClick={() => {
                                   setWriteImages((prev: string[]) => prev.filter((_, i) => i !== idx));
                                   setWriteFiles((prev: File[]) => prev.filter((_, i) => i !== idx));
-                                }} className="absolute top-0 right-0 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-bl font-bold">X</button>
+                                }} className="absolute top-0 right-0 bg-slate-900/80 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-bl-lg font-bold">X</button>
                               </div>
                             ))}
                           </div>
                         )}
                       </div>
-                      
+
                       <div>
-                        <label className="block font-bold mb-1 text-sm text-slate-700">🔗 링크</label>
-                        <input type="text" value={writeLink} onChange={e=>setWriteLink(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"/>
+                        <label className="block text-xs font-bold text-slate-400 mb-1">🔗 링크</label>
+                        <input type="text" value={writeLink} onChange={e=>setWriteLink(e.target.value)} className="w-full p-3.5 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm focus:outline-none" />
                       </div>
-                      
+
                       <div>
-                        <label className="block font-bold mb-1 text-sm text-slate-700">📆 마감일</label>
-                        <input type="date" value={writeEndDate} onChange={e=>setWriteEndDate(e.target.value)} className="w-full p-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow bg-white"/>
+                        <label className="block text-xs font-bold text-slate-400 mb-1">📆 마감일</label>
+                        <input type="date" value={writeEndDate} onChange={e=>setWriteEndDate(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none cursor-pointer" />
                       </div>
-                      
-                      <div className="h-12 mt-4">
+
+                      <div className="pt-4">
                         <button disabled={isUploading} onClick={async ()=>{
                           setIsUploading(true);
                           let finalUrls = writeImages; 
@@ -1290,16 +1154,11 @@ export default function Home() {
                           }
 
                           if (editingPostId && editingPostId >= 10000) {
-                            await supabase.from('deals').update({
-                              title: writeTitle, content: writeContent, url: writeLink, mall_name: writeMall, price: writePrice, shipping: writeShipping, end_date: writeEndDate, image: finalUrls[0] || post_to_edit.image, images: writeFiles.length > 0 ? finalUrls : post_to_edit.images
-                            }).eq('id', editingPostId - 10000);
+                            await supabase.from('deals').update({ title: writeTitle, content: writeContent, url: writeLink, mall_name: writeMall, price: writePrice, shipping: writeShipping, end_date: writeEndDate, image: finalUrls[0] || post_to_edit.image, images: writeFiles.length > 0 ? finalUrls : post_to_edit.images }).eq('id', editingPostId - 10000);
                             fetchTargetData();
                           }
-                          
-                          setIsUploading(false);
-                          alert("수정 완료!"); 
-                          navigate(post_to_edit.category);
-                        }} className={styles.primaryButton}>{isUploading ? "⏳ 업로드 및 수정 중..." : "💾 수정 완료"}</button>
+                          setIsUploading(false); alert("수정 완료!"); navigate(post_to_edit.category);
+                        }} className={styles.primaryButton}>저장하기</button>
                       </div>
                     </div>
                   )
@@ -1307,188 +1166,177 @@ export default function Home() {
               </div>
             )}
 
-            {/* 👤 마이페이지 */}
+            {/* 12. 마이페이지 (완벽 복원 및 리디자인) */}
             {currentView === "마이페이지" && auth.loggedIn && (
-              <div className="bg-white border border-slate-200 p-4 md:p-8 rounded-xl shadow-sm">
-                <h1 className="text-2xl md:text-3xl font-bold mb-4 text-slate-800">👤 마이페이지</h1>
+              <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-6">
+                <h1 className="text-2xl font-black tracking-tight">👤 개인 계정 센터</h1>
                 
-                <div className="mb-8 p-4 md:p-6 bg-slate-50 border border-slate-200 rounded-lg shadow-sm">
-                  <h4 className="font-bold text-sm md:text-base mb-3 text-slate-800">🔒 내 활동 내역 공개 범위 설정</h4>
-                  <div className="space-y-2 mb-6">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs md:text-sm font-semibold text-slate-700">
-                      <input type="checkbox" checked={userProfile.sharePosts} onChange={e => setUserProfile({...userProfile, sharePosts: e.target.checked})} className="w-4 h-4 text-slate-600 focus:ring-slate-400" />
-                      다른 유저에게 내가 작성한 게시글 목록 공개 허용
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer text-xs md:text-sm font-semibold text-slate-700">
-                      <input type="checkbox" checked={userProfile.shareComments} onChange={e => setUserProfile({...userProfile, shareComments: e.target.checked})} className="w-4 h-4 text-slate-600 focus:ring-slate-400" />
-                      다른 유저에게 내가 작성한 댓글 목록 공개 허용
-                    </label>
-                    <p className="text-[11px] md:text-xs text-red-500">※ 체크 해제 시 남들이 내 닉네임을 눌러도 활동 내역이 보이지 않습니다.</p>
+                <div className="p-5 md:p-6 bg-slate-50/50 rounded-3xl border border-slate-100 space-y-5">
+                  <h4 className="font-bold text-xs text-slate-500 uppercase tracking-wider">보안 & 프라이버시</h4>
+                  <div className="space-y-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                    <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer"><input type="checkbox" checked={userProfile.sharePosts} onChange={e => setUserProfile({...userProfile, sharePosts: e.target.checked})} className="w-4 h-4 accent-slate-900"/> 내 피드 목록 타인 조회 허용</label>
+                    <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer"><input type="checkbox" checked={userProfile.shareComments} onChange={e => setUserProfile({...userProfile, shareComments: e.target.checked})} className="w-4 h-4 accent-slate-900"/> 내 피드백(댓글) 목록 허용</label>
                   </div>
 
-                  <label className="block text-xs md:text-sm font-bold text-slate-700 mb-1">🏷️ 내 커뮤니티 닉네임 설정</label>
-                  <div className="flex flex-col md:flex-row gap-2 h-auto md:h-10">
-                    <div className="w-full md:w-4/5 h-10">
-                      <input type="text" value={userProfile.nickname} onChange={e => setUserProfile({...userProfile, nickname: e.target.value})} className="border p-2 rounded text-sm w-full h-full focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"/>
-                    </div>
-                    <div className="w-full md:w-1/5 h-10">
-                      <button onClick={saveProfileInfo} className={styles.primaryButton}>💾 설정 저장</button>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2">활동 이름(닉네임) 변경</label>
+                    <div className="flex gap-2">
+                      <input type="text" value={userProfile.nickname} onChange={e => setUserProfile({...userProfile, nickname: e.target.value})} className="border border-slate-200 p-3 rounded-2xl text-sm flex-1 bg-white focus:outline-none focus:border-slate-400" />
+                      <button onClick={saveProfileInfo} className="px-5 bg-slate-900 text-white rounded-2xl text-sm font-bold hover:bg-slate-800 shadow-sm">변경</button>
                     </div>
                   </div>
                 </div>
 
-                <p className="mb-6 text-sm md:text-base text-slate-600">환영합니다! <b className="text-slate-800">{userProfile.nickname}</b>님의 개인 내부 내역입니다.</p>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
-                  {["📝 내가 쓴 글", "💬 내가 쓴 댓글", "👍 추천 내역", "⭐ 스크랩"].map((t, i)=>(
-                    <button key={i} onClick={()=>setMyPageTab(i)} className={myPageTab === i ? styles.primaryButton : styles.secondaryButton}>{t}</button>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 border-b border-slate-100 pb-4">
+                  {["내가 쓴 글", "내 피드백", "반응 내역", "⭐ 스크랩"].map((t, i)=>(
+                    <button key={i} onClick={()=>setMyPageTab(i)} className={`py-3 px-3 rounded-2xl text-xs font-bold transition-all ${myPageTab === i ? "bg-slate-900 text-white shadow-sm" : "bg-slate-50 text-slate-500 hover:bg-slate-100"}`}>{t}</button>
                   ))}
                 </div>
-                <div className="space-y-4">
-                  {myPageTab === 0 && posts.filter(p=>p.author===auth.userId).map(p=>(
-                    <div key={p.id} className="border border-slate-300 p-3 md:p-4 rounded-lg bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer text-sm md:text-base" onClick={()=>handleViewPost(p.id, p.category)}>
-                      <b className="block truncate">[{p.category} &gt; {p.subCategory||"일반"}] {p.title}</b>
-                    </div>
-                  ))}
-                  {myPageTab === 1 && posts.map(p=>p.comments?.filter((c:any)=>c.user===auth.userId).map((c:any)=>(
-                    <div key={c.id} className="border border-slate-300 p-3 md:p-4 rounded-lg bg-slate-50 mb-3 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer" onClick={()=>handleViewPost(p.id, p.category)}>
-                      <b className="text-sm md:text-base">💬 {c.text}</b><p className="text-xs md:text-sm text-slate-500 mt-2 truncate">원문: [{p.category}] {p.title}</p>
-                    </div>
-                  )))}
-                  {myPageTab === 2 && posts.filter(p=>p.upvotedBy?.includes(auth.userId) || ["hot","soso","cold"].includes(p.thermoVotedBy?.[auth.userId])).map(p=>(
-                    <div key={p.id} className="border border-slate-300 p-3 md:p-4 rounded-lg bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer text-sm md:text-base" onClick={()=>handleViewPost(p.id, p.category)}>
-                      <b className="block truncate">[{p.category} &gt; {p.subCategory||"일반"}] {p.title}</b>
-                    </div>
-                  ))}
-                  {myPageTab === 3 && posts.filter(p=>p.scrappedBy?.includes(auth.userId)).map(p=>(
-                    <div key={p.id} className="border border-slate-300 p-3 md:p-4 rounded-lg bg-slate-50 flex flex-col md:flex-row justify-between cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors gap-1 md:gap-0 text-sm md:text-base" onClick={()=>handleViewPost(p.id, p.category)}>
-                      <b className="block truncate w-full md:w-auto">[{p.category} &gt; {p.subCategory||"일반"}] {p.title}</b>
-                      <span className="text-[11px] md:text-sm text-slate-400 whitespace-nowrap">({p.time ? p.time.split(' ')[0] : ""})</span>
-                    </div>
-                  ))}
-                  {myPageTab === 3 && posts.filter(p=>p.scrappedBy?.includes(auth.userId)).length === 0 && (
-                    <div className="p-6 border border-slate-300 text-center text-slate-500 rounded-lg text-sm md:text-base">아직 스크랩(북마크)한 게시글이 없습니다.</div>
+                
+                <div className="space-y-2 pt-2">
+                  {myPageTab === 0 && (
+                    posts.filter(p=>p.author===auth.userId).length === 0 ? <p className="text-center text-xs text-slate-400 py-10 font-bold">작성한 글이 없습니다.</p> :
+                    posts.filter(p=>p.author===auth.userId).map(p=>(
+                      <div key={p.id} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 text-sm font-bold cursor-pointer hover:bg-white hover:shadow-sm transition-all truncate" onClick={()=>handleViewPost(p.id, p.category)}>
+                        <span className="text-slate-400 text-xs mr-2 font-normal">[{p.category}]</span> {p.title}
+                      </div>
+                    ))
+                  )}
+
+                  {myPageTab === 1 && (
+                    posts.flatMap(p => p.comments?.filter((c:any) => c.user === auth.userId).map((c:any) => ({ post: p, cmt: c }))).length === 0 ? <p className="text-center text-xs text-slate-400 py-10 font-bold">작성한 피드백이 없습니다.</p> :
+                    posts.flatMap(p => p.comments?.filter((c:any) => c.user === auth.userId).map((c:any) => ({ post: p, cmt: c }))).map((item:any, idx:number) => (
+                      <div key={idx} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 cursor-pointer hover:bg-white hover:shadow-sm transition-all" onClick={()=>handleViewPost(item.post.id, item.post.category)}>
+                        <b className="text-sm">💬 {item.cmt.text}</b>
+                        <p className="text-[11px] text-slate-400 mt-2 truncate">원문: [{item.post.category}] {item.post.title}</p>
+                      </div>
+                    ))
+                  )}
+
+                  {myPageTab === 2 && (
+                    posts.filter(p=>p.upvotedBy?.includes(auth.userId) || ["hot","soso","cold"].includes(p.thermoVotedBy?.[auth.userId])).length === 0 ? <p className="text-center text-xs text-slate-400 py-10 font-bold">평가를 남긴 피드가 없습니다.</p> :
+                    posts.filter(p=>p.upvotedBy?.includes(auth.userId) || ["hot","soso","cold"].includes(p.thermoVotedBy?.[auth.userId])).map(p=>(
+                      <div key={p.id} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 text-sm font-bold cursor-pointer hover:bg-white hover:shadow-sm transition-all truncate" onClick={()=>handleViewPost(p.id, p.category)}>
+                        <span className="text-slate-400 text-xs mr-2 font-normal">[{p.category}]</span> {p.title}
+                      </div>
+                    ))
+                  )}
+
+                  {myPageTab === 3 && (
+                    posts.filter(p=>p.scrappedBy?.includes(auth.userId)).length === 0 ? <p className="text-center text-xs text-slate-400 py-10 font-bold">스크랩한 피드가 없습니다.</p> :
+                    posts.filter(p=>p.scrappedBy?.includes(auth.userId)).map(p=>(
+                      <div key={p.id} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 flex flex-col md:flex-row justify-between items-center cursor-pointer hover:bg-white hover:shadow-sm transition-all gap-2 text-sm font-bold" onClick={()=>handleViewPost(p.id, p.category)}>
+                        <div className="truncate w-full md:w-auto"><span className="text-slate-400 text-xs mr-2 font-normal">[{p.category}]</span> {p.title}</div>
+                        <span className="text-[11px] text-slate-400 whitespace-nowrap bg-white px-2 py-1 rounded-lg border border-slate-100">{p.time ? p.time.split(' ')[0] : ""}</span>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
             )}
 
-            {/* ⚙️ 사이트 관리 */}
+            {/* 13. 사이트 관리 (배너 및 카테고리 관리 완벽 복원) */}
             {currentView === "사이트 관리" && auth.userRole === "admin" && (
-              <div className="bg-white border border-slate-200 p-4 md:p-8 rounded-xl shadow-sm">
-                <h1 className="text-2xl md:text-3xl font-bold mb-6 text-slate-800">⚙️ 요깄다 통합 사이트 관리</h1>
-                <hr className="mb-6 border-slate-200"/>
+              <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-8">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                  <h1 className="text-xl font-black tracking-tight text-red-500">⚙️ 중앙 관제소</h1>
+                  <span className="bg-red-50 text-red-600 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider">Admin Only</span>
+                </div>
                 
-                <h3 className="font-bold text-lg md:text-xl mb-4 text-slate-800">🚨 신고 누적 게시글 검토</h3>
-                {posts.filter(p=>p.reportedBy?.length>=3).length === 0 ? (
-                  <div className="p-5 bg-green-50 text-green-700 border border-green-200 rounded-lg mb-8 font-bold text-sm md:text-base">🎉 현재 3회 이상 신고 접수된 악성 게시글이 없습니다. 클린합니다!</div> 
-                ) : (
-                  <div className="p-4 md:p-6 bg-yellow-50 border border-yellow-300 rounded-lg mb-8">
-                    <p className="font-bold text-yellow-800 mb-4 text-sm md:text-base">🚨 주의: 3회 이상 신고가 누적된 게시글이 {posts.filter(p=>p.reportedBy?.length>=3).length}건 있습니다.</p>
-                    {posts.filter(p=>p.reportedBy?.length>=3).map(p=>(
-                      <div key={p.id} className="border border-yellow-300 bg-white p-4 mb-3 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center shadow-sm gap-4 md:gap-0">
-                        <div className="w-full md:w-auto overflow-hidden">
-                          <b className="text-[14px] md:text-[15px] block truncate">[{p.category}] {p.title} <span className="text-red-500 font-bold ml-1 md:ml-2">(신고: {p.reportedBy.length}회)</span></b>
-                          <span className="text-xs md:text-sm text-slate-500 mt-1 block truncate">작성자: {p.author} | 내용: {p.content.substring(0,30)}...</span>
-                        </div>
-                        <button onClick={async ()=>{ 
-                          if (window.confirm("🚨 이 게시글을 즉시 삭제(블라인드) 처리하시겠습니까?")) {
-                            setPosts((prev: any[]) => prev.filter(post=>post.id!==p.id)); 
-                            if(p.id >= 10000) await supabase.from('deals').delete().eq('id', p.id - 10000);
-                            alert("성공적으로 삭제되었습니다.");
-                          }
-                        }} className="w-full md:w-auto px-5 py-2.5 bg-red-600 hover:bg-red-700 transition-colors text-white rounded font-bold text-sm whitespace-nowrap">
-                          🗑️ 즉시 삭제 (블라인드)
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="space-y-4">
+                  <h3 className="font-black text-sm text-slate-800">🚨 긴급 블라인드 검토 대상</h3>
+                  {posts.filter(p=>p.reportedBy?.length>=3).length === 0 ? (
+                    <div className="p-6 bg-green-50/50 text-green-700 rounded-2xl border border-green-100 text-xs font-bold text-center">클린합니다! 3회 이상 신고된 악성 피드가 없습니다.</div>
+                  ) : posts.filter(p=>p.reportedBy?.length>=3).map(p=>(
+                    <div key={p.id} className="p-4 border border-red-100 rounded-2xl bg-red-50/30 flex justify-between items-center gap-4 text-xs font-bold">
+                      <div className="truncate flex-1">[{p.category}] {p.title} <span className="text-red-500 ml-2 bg-white px-2 py-0.5 rounded-lg shadow-sm">누적 신고: {p.reportedBy.length}회</span></div>
+                      <button onClick={async ()=>{ 
+                        if (window.confirm("즉시 폭파하시겠습니까?")) {
+                          setPosts((prev: any[]) => prev.filter(post=>post.id!==p.id)); 
+                          if(p.id >= 10000) await supabase.from('deals').delete().eq('id', p.id - 10000);
+                        }
+                      }} className="px-4 py-2 bg-red-600 text-white rounded-xl text-[11px] hover:bg-red-700 shadow-sm shrink-0">블라인드</button>
+                    </div>
+                  ))}
+                </div>
 
-                <h3 className="font-bold text-lg md:text-xl mb-2 text-slate-800">🖼️ 메인 로비 배너 교체</h3>
-                <div className="border border-slate-300 p-4 md:p-6 rounded-lg mb-8 bg-slate-50">
-                  <label className="block mb-1 text-xs md:text-sm font-bold text-slate-700">1. 배너 이미지 설정 (URL 입력)</label>
-                  <input type="text" placeholder="📷 배너 이미지 URL 주소" value={adminBannerImg} onChange={e=>setAdminBannerImg(e.target.value)} className="w-full p-2 md:p-3 border border-slate-300 rounded-lg mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" />
-                  
-                  <label className="block mb-1 text-xs md:text-sm font-bold text-slate-700 mt-4">2. 클릭 시 이동할 링크</label>
-                  <input type="text" placeholder="🔗 클릭 시 이동할 이벤트 링크" value={adminBannerLink} onChange={e=>setAdminBannerLink(e.target.value)} className="w-full p-2 md:p-3 border border-slate-300 rounded-lg mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" />
-                  
-                  <label className="flex items-center gap-2 mb-6 font-bold text-sm text-slate-700">
-                    <input type="checkbox" checked={adminBannerActive} onChange={e=>setAdminBannerActive(e.target.checked)} className="w-4 h-4 cursor-pointer" /> 
-                    배너 활성화
-                  </label>
-                  
-                  <div className="h-10 md:h-12">
-                    <button onClick={()=>{ setMainBanner({ imageUrl: adminBannerImg, targetLink: adminBannerLink, isActive: adminBannerActive }); alert("적용 완료!"); }} className={styles.primaryButton}>
-                      💾 변경사항 저장 및 로비에 적용
-                    </button>
+                <div className="pt-8 border-t border-slate-100 space-y-4">
+                  <h3 className="font-black text-sm text-slate-800">🖼️ 메인 로비 배너 제어</h3>
+                  <div className="bg-slate-50 border border-slate-100 p-5 md:p-6 rounded-3xl space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5">배너 이미지 URL 주소</label>
+                      <input type="text" placeholder="https://..." value={adminBannerImg} onChange={e=>setAdminBannerImg(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5">클릭 시 이동할 링크 URL</label>
+                      <input type="text" placeholder="https://..." value={adminBannerLink} onChange={e=>setAdminBannerLink(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
+                    </div>
+                    <div className="flex items-center justify-between pt-2">
+                      <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={adminBannerActive} onChange={e=>setAdminBannerActive(e.target.checked)} className="w-4 h-4 accent-slate-900" /> 메인 화면에 배너 노출
+                      </label>
+                      <button onClick={()=>{ setMainBanner({ imageUrl: adminBannerImg, targetLink: adminBannerLink, isActive: adminBannerActive }); alert("로비 배너 교체 완료!"); }} className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 shadow-sm">저장 및 적용</button>
+                    </div>
                   </div>
                 </div>
 
-                <h3 className="font-bold text-lg md:text-xl mb-2 text-slate-800">📂 소카테고리(말머리) 통합 관리</h3>
-                <select value={adminEditCat} onChange={e=>setAdminEditCat(e.target.value)} className="w-full p-3 border border-slate-300 rounded-lg mb-4 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow bg-white">
-                  {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
-                </select>
-                <div className="p-4 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg mb-6 font-bold text-xs md:text-sm overflow-x-auto whitespace-nowrap scrollbar-hide">
-                  현재 [{adminEditCat}] 게시판의 말머리 목록: {subCategories[adminEditCat]?.join("  |  ")}
-                </div>
-                
-                <div className="flex flex-col md:flex-row gap-4">
-                  <div className="flex-1 bg-slate-50 p-4 md:p-5 rounded-lg border border-slate-200">
-                    <b className="block mb-3 text-sm text-slate-800">➕ 새 말머리 추가</b>
-                    <input type="text" value={adminAddSubInput} onChange={e=>setAdminAddSubInput(e.target.value)} className="w-full p-2 md:p-3 border border-slate-300 rounded-lg mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" placeholder="추가할 이름" />
-                    <div className="h-10 md:h-12">
+                <div className="pt-8 border-t border-slate-100 space-y-4">
+                  <h3 className="font-black text-sm text-slate-800">📂 피드 카테고리(말머리) 제어</h3>
+                  <select value={adminEditCat} onChange={e=>setAdminEditCat(e.target.value)} className="w-full p-3.5 border border-slate-200 rounded-2xl text-sm font-bold bg-white focus:outline-none shadow-sm cursor-pointer">
+                    {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <div className="p-4 bg-blue-50/50 text-blue-800 rounded-2xl border border-blue-100 text-xs font-bold overflow-x-auto whitespace-nowrap scrollbar-hide shadow-sm flex items-center gap-2">
+                    <span className="bg-blue-600 text-white px-2 py-1 rounded-lg">현재 상태</span> {subCategories[adminEditCat]?.join("  →  ")}
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+                      <b className="text-xs block text-slate-700">➕ 말머리 추가</b>
+                      <input type="text" value={adminAddSubInput} onChange={e=>setAdminAddSubInput(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="새로운 이름" />
                       <button onClick={()=>{
                         if(!adminAddSubInput) return; 
                         if(subCategories[adminEditCat].includes(adminAddSubInput)) return alert("이미 존재합니다.");
-                        const newArr = [...subCategories[adminEditCat]]; 
-                        const endIdx = newArr.indexOf("종료"); 
-                        if(endIdx !== -1) newArr.splice(endIdx, 0, adminAddSubInput); 
-                        else newArr.push(adminAddSubInput);
-                        setSubCategories((prev: any) => ({...prev, [adminEditCat]: newArr})); 
-                        setAdminAddSubInput(""); 
-                        alert(`'${adminAddSubInput}' 추가 완료!`);
-                      }} className={styles.primaryButton}>추가하기</button>
+                        const newArr = [...subCategories[adminEditCat]]; const endIdx = newArr.indexOf("종료"); 
+                        if(endIdx !== -1) newArr.splice(endIdx, 0, adminAddSubInput); else newArr.push(adminAddSubInput);
+                        setSubCategories((prev: any) => ({...prev, [adminEditCat]: newArr})); setAdminAddSubInput(""); alert("추가 완료!");
+                      }} className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-colors">추가 실행</button>
                     </div>
-                  </div>
-                  <div className="flex-1 bg-slate-50 p-4 md:p-5 rounded-lg border border-slate-200">
-                    <b className="block mb-3 text-sm text-slate-800">📝 말머리 수정</b>
-                    <select value={adminRenameTarget} onChange={e=>setAdminRenameTarget(e.target.value)} className="w-full p-2 md:p-3 border border-slate-300 rounded-lg mb-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow">
-                      <option value="선택안함">변경할 대상 선택</option>
-                      {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <input type="text" placeholder="새로운 이름 입력" value={adminRenameInput} onChange={e=>setAdminRenameInput(e.target.value)} className="w-full p-2 md:p-3 border border-slate-300 rounded-lg mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow" />
-                    <div className="h-10 md:h-12">
+
+                    <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+                      <b className="text-xs block text-slate-700">📝 말머리 변경</b>
+                      <select value={adminRenameTarget} onChange={e=>setAdminRenameTarget(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none cursor-pointer">
+                        <option value="선택안함">기존 대상 선택</option>
+                        {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <input type="text" value={adminRenameInput} onChange={e=>setAdminRenameInput(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="바꿀 이름" />
                       <button onClick={()=>{
-                        if(adminRenameTarget==="선택안함" || !adminRenameInput) return alert("대상과 새 이름을 모두 입력하세요."); 
-                        if(subCategories[adminEditCat].includes(adminRenameInput)) return alert("이미 존재하는 이름입니다.");
+                        if(adminRenameTarget==="선택안함" || !adminRenameInput) return alert("입력 오류"); 
+                        if(subCategories[adminEditCat].includes(adminRenameInput)) return alert("중복 발생");
                         setSubCategories((prev: any) => ({ ...prev, [adminEditCat]: prev[adminEditCat].map((s:any)=>s===adminRenameTarget ? adminRenameInput : s) }));
-                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminRenameTarget) ? {...p, subCategory: adminRenameInput} : p)); 
-                        alert(`'${adminRenameTarget}' ➔ '${adminRenameInput}' 변경 완료!`);
-                      }} className={styles.primaryButton}>이름 변경</button>
+                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminRenameTarget) ? {...p, subCategory: adminRenameInput} : p)); alert("변경 완료!");
+                      }} className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-colors">변경 실행</button>
                     </div>
-                  </div>
-                  <div className="flex-1 bg-red-50 p-4 md:p-5 rounded-lg border border-red-200">
-                    <b className="block mb-3 text-sm text-red-600">🗑️ 말머리 삭제</b>
-                    <select value={adminDelTarget} onChange={e=>setAdminDelTarget(e.target.value)} className="w-full p-2 md:p-3 border border-red-300 rounded-lg mb-4 text-sm text-red-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-400 transition-shadow">
-                      <option value="선택안함">삭제할 대상 선택</option>
-                      {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <div className="h-10 md:h-12 md:mt-[60px]">
+
+                    <div className="bg-white p-5 rounded-3xl border border-red-100 shadow-sm space-y-3">
+                      <b className="text-xs block text-red-600">🗑️ 말머리 삭제</b>
+                      <select value={adminDelTarget} onChange={e=>setAdminDelTarget(e.target.value)} className="w-full p-3 bg-red-50/30 border border-red-100 text-red-700 rounded-2xl text-xs focus:outline-none cursor-pointer">
+                        <option value="선택안함">삭제 대상 선택</option>
+                        {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <div className="h-[42px]"></div> {/* 간격 맞추기용 */}
                       <button onClick={()=>{
-                        if(adminDelTarget==="선택안함") return alert("대상을 선택하세요.");
+                        if(adminDelTarget==="선택안함") return alert("선택하세요");
                         setSubCategories((prev: any) => ({ ...prev, [adminEditCat]: prev[adminEditCat].filter((s:any)=>s!==adminDelTarget) }));
-                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminDelTarget) ? {...p, subCategory: "일반"} : p)); 
-                        alert(`'${adminDelTarget}' 삭제 완료!`);
-                      }} className="bg-red-600 text-white rounded-lg hover:bg-red-700 w-full h-full font-bold transition-colors">삭제하기</button>
+                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminDelTarget) ? {...p, subCategory: "일반"} : p)); alert("삭제 완료!");
+                      }} className="w-full py-3 bg-red-600 text-white rounded-2xl text-xs font-bold hover:bg-red-700 transition-colors">영구 삭제</button>
                     </div>
                   </div>
                 </div>
               </div>
             )}
 
-          </div> {/* w-full max-w-5xl mx-auto 닫기 */}
-        </div> {/* styles.container 닫기 */}
+          </div> 
+        </div> 
     </>
   );
 }
