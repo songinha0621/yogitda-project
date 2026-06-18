@@ -44,9 +44,8 @@ export default function Home() {
   const [profilesDb, setProfilesDb] = useState<any>({});
   const [userProfile, setUserProfile] = useState({ nickname: "", sharePosts: false, shareComments: false });
   
-  // 🚨 한글 깨짐 방지를 위해 영문으로 수정 완료
   const [mainBanner, setMainBanner] = useState({
-    imageUrl: "https://dummyimage.com/1600x400/1e293b/ffffff&text=[Grand+Open]+Welcome+to+SSAINDA!",
+    imageUrl: "https://dummyimage.com/1600x400/1e293b/ffffff&text=[Grand+Open]+Welcome+to+HALINMOA!",
     targetLink: "https://naver.com",
     isActive: true
   });
@@ -338,7 +337,8 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>쌓인다 - 혜택과 할인이 차곡차곡</title>
+        {/* 🚨 브라우저 탭 상단 이름 교체 완료 */}
+        <title>할인모아 - 흩어진 혜택을 한곳에</title>
       </Head>
 
       <div className={styles.container}>
@@ -349,21 +349,20 @@ export default function Home() {
           </div>
         )}
 
-        {/* 1. 상단 헤더 (토스 감성 검색창 비율 및 탭 풀사이즈 교정) */}
+        {/* 1. 상단 헤더 */}
         {!["글쓰기", "글수정", "회원가입", "비밀번호찾기", "로그인"].includes(currentView) && (
           <div className="mb-6 md:mb-8">
             <header className="flex flex-col md:flex-row w-full items-center justify-between mb-6 gap-4 md:h-[48px]">
               <div className="w-full md:w-auto flex-shrink-0 flex justify-between items-center md:block">
                 <button onClick={() => navigate("로비")} className="text-2xl font-black tracking-tight text-slate-900 hover:opacity-80 transition-opacity">
-                  쌓인다 <span className="text-blue-600 text-xl">.</span>
+                  할인모아 <span className="text-blue-600 text-xl">.</span>
                 </button>
               </div>
               
-              {/* 🚨 요구사항 반영: 검색창 최대 길이 제한 및 센터 정렬 */}
               <div className="w-full md:w-[350px] lg:w-[450px] h-[44px] md:mx-auto">
                 <input 
                   type="text" 
-                  placeholder="쌓여있는 핫딜과 페이백 검색 (엔터)" 
+                  placeholder="모든 핫딜과 페이백 검색 (엔터)" 
                   value={searchQuery} 
                   onChange={(e) => setSearchQuery(e.target.value)} 
                   onKeyDown={(e) => { 
@@ -395,7 +394,6 @@ export default function Home() {
               </div>
             </header>
 
-            {/* 🚨 요구사항 반영: 카테고리 탭 좌우 폭 배너 사이즈와 동일하게 맞춤(flex-1 등간격 분할) */}
             <nav className="flex w-full justify-between items-center gap-1.5 overflow-x-auto whitespace-nowrap py-2 scrollbar-hide border-b border-slate-200/60">
               {CATEGORIES.map((cat) => {
                 const targetCat = cat === "공지사항" ? "공지사항" : cat;
@@ -425,7 +423,7 @@ export default function Home() {
             {currentView === "로그인" && (
               <div className="w-full md:max-w-md mx-auto bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 mt-6">
                 <h1 className="text-2xl font-black mb-2 tracking-tight">반가워요 👋</h1>
-                <p className="mb-6 text-slate-500 text-sm">안전하고 똑똑하게 혜택을 쌓아보세요.</p>
+                <p className="mb-6 text-slate-500 text-sm">안전하고 똑똑하게 혜택을 모아보세요.</p>
                 
                 <div className="space-y-3 mb-6">
                   <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm flex justify-center items-center gap-2 text-sm hover:opacity-95 transition-opacity">💬 카카오로 3초만에 시작</button>
@@ -555,7 +553,7 @@ export default function Home() {
                       )}
                     </div>
                     {(!notifications[auth.userId] || notifications[auth.userId].length === 0) ? (
-                      <p className="text-slate-400 text-center py-12 text-sm font-semibold">아직 새로 쌓인 알림이 없어요.</p>
+                      <p className="text-slate-400 text-center py-12 text-sm font-semibold">아직 도착한 알림이 없어요.</p>
                     ) : (
                       <div className="space-y-3">
                         {notifications[auth.userId].map((n:any)=>(
@@ -571,7 +569,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* 6. 로비 (워딩 교정 완료) */}
+            {/* 6. 로비 */}
             {currentView === "로비" && !isLoading && (
               <div className="space-y-6">
                 {mainBanner.isActive && (
@@ -589,7 +587,7 @@ export default function Home() {
                     <div className="space-y-3">
                       {(() => {
                         const validDisc = posts.filter(p => ["옷","음식","여가","쇼핑","여행"].includes(p.category) && p.author === "ext9999" && isValidForRanking(p)).sort((a,b)=>b.upvotes-a.upvotes).slice(0,3);
-                        if (validDisc.length === 0) return <p className="text-slate-400 text-xs py-4 font-semibold">쌓여있는 베스트 정보가 아직 없습니다.</p>;
+                        if (validDisc.length === 0) return <p className="text-slate-400 text-xs py-4 font-semibold">모여있는 베스트 정보가 아직 없습니다.</p>;
                         return validDisc.map((p, idx) => (
                           <div key={p.id} className="flex items-center gap-3 py-1.5 border-b border-slate-50 last:border-0">
                             <span className="text-lg font-black text-slate-300 w-5 text-center">{idx+1}</span>
@@ -604,7 +602,6 @@ export default function Home() {
                   </div>
 
                   <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                    {/* 🚨 요구사항 반영: '대박' 워딩 삭제 */}
                     <h4 className="font-black text-lg mb-4 tracking-tight text-slate-800 flex items-center justify-between">
                       <span>🔥 실시간 핫딜</span>
                       <button onClick={()=>navigate("핫딜 커뮤니티")} className="text-xs text-blue-600 font-bold hover:underline bg-blue-50 px-3 py-1 rounded-xl">더보기 &gt;</button>
