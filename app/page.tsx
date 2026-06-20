@@ -282,6 +282,7 @@ export default function Home() {
   
   const [commentInput, setCommentInput] = useState(""); const [replyInputs, setReplyInputs] = useState<any>({}); const [replyOpen, setReplyOpen] = useState<any>({});
   const [adminBannerImg, setAdminBannerImg] = useState(mainBanner.imageUrl); const [adminBannerLink, setAdminBannerLink] = useState(mainBanner.targetLink); const [adminBannerActive, setAdminBannerActive] = useState(mainBanner.isActive);
+  const [bannerFile, setBannerFile] = useState<File | null>(null); // [수정됨] 관리자 배너 업로드용 파일 상태 추가
   const [adminEditCat, setAdminEditCat] = useState("옷"); const [adminAddSubInput, setAdminAddSubInput] = useState(""); const [adminRenameTarget, setAdminRenameTarget] = useState("선택안함"); const [adminRenameInput, setAdminRenameInput] = useState(""); const [adminDelTarget, setAdminDelTarget] = useState("선택안함");
   
   const navigate = (view: string) => { 
@@ -402,9 +403,7 @@ export default function Home() {
                   <>
                     <button onClick={() => navigate("로그인")} className="px-4 text-sm font-bold text-slate-600 hover:text-slate-900">로그인</button>
                     <button onClick={() => navigate("회원가입")} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors">시작하기</button>
-                  </>
-                ) : (
-                  <>
+                  </                  <>
                     <div className="text-sm px-2 font-bold text-slate-800 flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span> {userProfile.nickname}님
                     </div>
@@ -1307,12 +1306,24 @@ export default function Home() {
                   ))}
                 </div>
 
+                {/* [수정됨] 메인 배너 이미지 파일 직접 첨부 기능 탑재 완료 */}
                 <div className="pt-8 border-t border-slate-100 space-y-4">
                   <h3 className="font-black text-sm text-slate-800">🖼️ 메인 로비 배너 제어</h3>
                   <div className="bg-slate-50 border border-slate-100 p-5 md:p-6 rounded-3xl space-y-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">배너 이미지 URL 주소</label>
-                      <input type="text" placeholder="https://..." value={adminBannerImg} onChange={e=>setAdminBannerImg(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5">배너 이미지 파일 업로드 (직접 첨부)</label>
+                      <input type="file" accept="image/*" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setBannerFile(file);
+                          const reader = new FileReader();
+                          reader.onloadend = () => setAdminBannerImg(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                      }} className="w-full p-3 bg-white border border-dashed border-slate-200 rounded-2xl text-xs cursor-pointer mb-3" />
+                      
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5">또는 배너 이미지 URL 주소</label>
+                      <input type="text" placeholder="https://..." value={adminBannerImg.startsWith('data:image') ? "" : adminBannerImg} onChange={e=>{ setAdminBannerImg(e.target.value); setBannerFile(null); }} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 mb-1.5">클릭 시 이동할 링크 URL</label>
@@ -1322,7 +1333,25 @@ export default function Home() {
                       <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
                         <input type="checkbox" checked={adminBannerActive} onChange={e=>setAdminBannerActive(e.target.checked)} className="w-4 h-4 accent-slate-900" /> 메인 화면에 배너 노출
                       </label>
-                      <button onClick={()=>{ setMainBanner({ imageUrl: adminBannerImg, targetLink: adminBannerLink, isActive: adminBannerActive }); alert("로비 배너 교체 완료!"); }} className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 shadow-sm">저장 및 적용</button>
+                      <button onClick={async ()=>{ 
+                        let finalUrl = adminBannerImg;
+                        if (bannerFile) {
+                          const fileExt = bannerFile.name.split('.').pop();
+                          const fileName = `banner_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+                          const { error: uploadError } = await supabase.storage.from('images').upload(fileName, bannerFile);
+                          if (!uploadError) {
+                            const { data } = supabase.storage.from('images').getPublicUrl(fileName);
+                            finalUrl = data.publicUrl;
+                            setAdminBannerImg(finalUrl);
+                          } else {
+                            alert("배너 이미지 업로드에 실패했습니다.");
+                            return;
+                          }
+                        }
+                        setMainBanner({ imageUrl: finalUrl, targetLink: adminBannerLink, isActive: adminBannerActive }); 
+                        setBannerFile(null);
+                        alert("로비 배너 교체 완료!"); 
+                      }} className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 shadow-sm">저장 및 적용</button>
                     </div>
                   </div>
                 </div>
