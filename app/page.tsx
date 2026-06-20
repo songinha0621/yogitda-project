@@ -82,7 +82,8 @@ export default function Home() {
           if (selectedSub === "종료") {
             query = query.or(`status.eq.종료,end_date.lt.${todayStr}`);
           } else {
-            query = query.neq('status', '종료').gte('end_date', todayStr);
+            // [수정됨] 무제한(null) 값도 진행중으로 포함하도록 or 구문 추가
+            query = query.neq('status', '종료').or(`end_date.gte.${todayStr},end_date.is.null`);
             if (selectedSub !== "전체") query = query.eq('sub_category', selectedSub);
           }
         } else {
@@ -132,7 +133,7 @@ export default function Home() {
           reportedBy: item.reported_by || [], 
           scrappedBy: item.scrapped_by || [],
           time: item.created_at ? new Date(item.created_at).toISOString().replace('T', ' ').slice(0, 16) : new Date().toISOString().slice(0, 16).replace('T', ' '),
-          endDate: item.end_date || "2026-12-31", 
+          endDate: item.end_date || null, // [수정됨] 무제한을 위해 null 유지
           status: item.status || "진행중", 
           comments: item.comments || [],
           mallName: item.mall_name || "", 
@@ -167,6 +168,22 @@ export default function Home() {
   useEffect(() => {
     fetchTargetData();
   }, [currentView, selectedSub, sortOption, activeSearch, currentPage, focusPostId, auth.userId]);
+
+  // [수정됨] 브라우저 뒤로가기 무한 늪 해결을 위한 이벤트 리스너 추가
+  useEffect(() => {
+    const handlePopState = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const postIdFromUrl = urlParams.get('post');
+      if (postIdFromUrl) {
+        setFocusPostId(parseInt(postIdFromUrl, 10));
+      } else {
+        setFocusPostId(null);
+        setCurrentView("로비");
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const syncUpdateToDB = async (postId: number, updateFields: any) => {
     if (postId < 10000) return; 
@@ -251,6 +268,7 @@ export default function Home() {
   const [isUploading, setIsUploading] = useState(false); 
 
   const [writeEndDate, setWriteEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isNoLimit, setIsNoLimit] = useState(false); // [수정됨] 무제한 설정 상태 추가
   
   const [commentInput, setCommentInput] = useState(""); const [replyInputs, setReplyInputs] = useState<any>({}); const [replyOpen, setReplyOpen] = useState<any>({});
   const [adminBannerImg, setAdminBannerImg] = useState(mainBanner.imageUrl); const [adminBannerLink, setAdminBannerLink] = useState(mainBanner.targetLink); const [adminBannerActive, setAdminBannerActive] = useState(mainBanner.isActive);
@@ -262,6 +280,7 @@ export default function Home() {
 
     if (view === "글쓰기") { 
       setWriteImages([]); setWriteFiles([]); setWriteTitle(""); setWriteContent(""); 
+      setIsNoLimit(false); // 글쓰기 시 기본값 초기화
     }
   };
   
@@ -324,7 +343,8 @@ export default function Home() {
     }
   };
 
-  const isValidForRanking = (p: any) => { try { if (!p.time || !p.endDate) return false; const pTime = new Date(p.time.replace(' ', 'T')).getTime(); const pEnd = new Date(p.endDate).getTime(); const sevenDaysAgo = Date.now() - 7 * 86400000; const today = new Date().setHours(0,0,0,0); return pTime >= sevenDaysAgo && p.status !== "종료" && pEnd >= today; } catch(e) { return false; } };
+  // [수정됨] 무제한(endDate가 null)일 때도 에러 없이 랭킹과 리스트에 뜨도록 안전장치 추가
+  const isValidForRanking = (p: any) => { try { if (!p.time) return false; const pTime = new Date(p.time.replace(' ', 'T')).getTime(); const sevenDaysAgo = Date.now() - 7 * 86400000; const today = new Date().setHours(0,0,0,0); return pTime >= sevenDaysAgo && p.status !== "종료" && (!p.endDate || new Date(p.endDate).getTime() >= today); } catch(e) { return false; } };
   const getUserDisplayName = (userId: string) => profilesDb[userId]?.nickname || userId;
 
   const styles = {
@@ -337,7 +357,6 @@ export default function Home() {
   return (
     <>
       <Head>
-        {/* 🚨 브라우저 탭 상단 이름 교체 완료 */}
         <title>할인모아 - 흩어진 혜택을 한곳에</title>
       </Head>
 
@@ -662,7 +681,8 @@ export default function Home() {
                     <p className="p-12 text-center text-slate-400 text-sm font-semibold">조건에 맞는 피드가 비어있어요.</p>
                   ) : posts.map(p => {
                     let isExp = false;
-                    try { isExp = p.status === "종료" || new Date(p.endDate) < new Date(new Date().setHours(0,0,0,0)); } catch(e) {}
+                    // [수정됨] 무제한일 때 안전하게 넘어가기 위한 조건 처리
+                    try { isExp = p.status === "종료" || (p.endDate && new Date(p.endDate) < new Date(new Date().setHours(0,0,0,0))); } catch(e) {}
                     const expTag = (isExp && selectedSub !== "종료") ? <span className="text-red-500 font-bold mr-1.5">[종료]</span> : "";
                     
                     let titleStr = `${expTag}${currentView==="핫딜 커뮤니티" && p.mallName ? `[${p.mallName}] ` : ""}${p.title}`;
@@ -709,7 +729,8 @@ export default function Home() {
                 if (!post) return <div className="p-6 bg-white border rounded-3xl text-center text-sm font-bold text-slate-400">피드를 불러오는 중입니다...</div>;
                 
                 let isExpired = false;
-                try { isExpired = (!["공지사항", "요청"].includes(currentView)) && (new Date(post.endDate) < new Date(new Date().setHours(0,0,0,0)) || post.status === "종료"); } catch(e){}
+                // [수정됨] 무제한일 때 안전하게 넘어가기 위한 조건 처리
+                try { isExpired = (!["공지사항", "요청"].includes(currentView)) && ((post.endDate && new Date(post.endDate) < new Date(new Date().setHours(0,0,0,0))) || post.status === "종료"); } catch(e){}
                 const isHot = currentView === "핫딜 커뮤니티";
 
                 return (
@@ -835,7 +856,13 @@ export default function Home() {
                       {(auth.userRole === "admin" || auth.userId === post.author) && (
                         <>
                           <button onClick={()=>{
-                            setWriteTitle(post.title); setWriteContent(post.content); setWriteLink(post.link); setWriteImages(post.images || []); setWriteEndDate(post.endDate||""); setWriteMall(post.mallName||""); setWritePrice(post.price||""); setWriteShipping(post.shipping||"무료배송"); setEditingPostId(post.id); setCurrentView("글수정"); window.scrollTo(0,0);
+                            setWriteTitle(post.title); setWriteContent(post.content); setWriteLink(post.link); setWriteImages(post.images || []); 
+                            
+                            // [수정됨] 무제한일 경우 편집창에서도 동일하게 세팅되도록 수정
+                            if (post.endDate) { setWriteEndDate(post.endDate); setIsNoLimit(false); } 
+                            else { setWriteEndDate(new Date().toISOString().split('T')[0]); setIsNoLimit(true); }
+                            
+                            setWriteMall(post.mallName||""); setWritePrice(post.price||""); setWriteShipping(post.shipping||"무료배송"); setEditingPostId(post.id); setCurrentView("글수정"); window.scrollTo(0,0);
                           }} className="px-4 py-2 bg-slate-100 text-slate-700 text-[11px] font-bold rounded-xl hover:bg-slate-200 transition-colors">수정</button>
                           <button onClick={async ()=>{ 
                             if (window.confirm("삭제하시겠습니까?")) {
@@ -1035,10 +1062,17 @@ export default function Home() {
                   <input type="text" value={writeLink} onChange={e=>setWriteLink(e.target.value)} className="w-full p-3.5 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm focus:outline-none" placeholder="https://..."/>
                 </div>
                 
+                {/* [수정됨] 무제한 설정 추가 */}
                 {!["공지사항", "요청"].includes(writingCategory) && (
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">📆 핫딜/할인 마감일</label>
-                    <input type="date" value={writeEndDate} onChange={e=>setWriteEndDate(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none cursor-pointer"/>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-400">📆 핫딜/할인 마감일</label>
+                      <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer">
+                        <input type="checkbox" checked={isNoLimit} onChange={e => setIsNoLimit(e.target.checked)} className="w-3.5 h-3.5 accent-slate-900" />
+                        기한 무제한
+                      </label>
+                    </div>
+                    <input type="date" value={writeEndDate} onChange={e=>setWriteEndDate(e.target.value)} disabled={isNoLimit} className={`w-full p-3.5 border border-slate-200 rounded-2xl text-sm focus:outline-none ${isNoLimit ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white cursor-pointer"}`}/>
                   </div>
                 )}
                 
@@ -1057,8 +1091,11 @@ export default function Home() {
                       }
                     }
                     
+                    // [수정됨] 무제한일 경우 end_date에 null 전송
                     const { error } = await supabase.from('deals').insert([{ 
-                      title: writeTitle, content: writeContent, price: writePrice, url: writeLink, category: writingCategory, sub_category: writeSubCat, author: auth.userId || "익명회원", mall_name: writeMall, shipping: writeShipping, end_date: writeEndDate, image: uploadedUrls[0] || null, images: uploadedUrls 
+                      title: writeTitle, content: writeContent, price: writePrice, url: writeLink, category: writingCategory, sub_category: writeSubCat, author: auth.userId || "익명회원", mall_name: writeMall, shipping: writeShipping, 
+                      end_date: isNoLimit ? null : writeEndDate, 
+                      image: uploadedUrls[0] || null, images: uploadedUrls 
                     }]);
                     setIsUploading(false);
                     if(error) alert("업로드 중 통신 실패");
@@ -1130,9 +1167,16 @@ export default function Home() {
                         <input type="text" value={writeLink} onChange={e=>setWriteLink(e.target.value)} className="w-full p-3.5 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm focus:outline-none" />
                       </div>
 
+                      {/* [수정됨] 수정 화면에서도 무제한 설정 추가 */}
                       <div>
-                        <label className="block text-xs font-bold text-slate-400 mb-1">📆 마감일</label>
-                        <input type="date" value={writeEndDate} onChange={e=>setWriteEndDate(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none cursor-pointer" />
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-bold text-slate-400">📆 마감일</label>
+                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer">
+                            <input type="checkbox" checked={isNoLimit} onChange={e => setIsNoLimit(e.target.checked)} className="w-3.5 h-3.5 accent-slate-900" />
+                            기한 무제한
+                          </label>
+                        </div>
+                        <input type="date" value={writeEndDate} onChange={e=>setWriteEndDate(e.target.value)} disabled={isNoLimit} className={`w-full p-3.5 border border-slate-200 rounded-2xl text-sm focus:outline-none ${isNoLimit ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white cursor-pointer"}`} />
                       </div>
 
                       <div className="pt-4">
@@ -1155,7 +1199,12 @@ export default function Home() {
                           }
 
                           if (editingPostId && editingPostId >= 10000) {
-                            await supabase.from('deals').update({ title: writeTitle, content: writeContent, url: writeLink, mall_name: writeMall, price: writePrice, shipping: writeShipping, end_date: writeEndDate, image: finalUrls[0] || post_to_edit.image, images: writeFiles.length > 0 ? finalUrls : post_to_edit.images }).eq('id', editingPostId - 10000);
+                            // [수정됨] 무제한 체크 여부에 따라 end_date 전송
+                            await supabase.from('deals').update({ 
+                              title: writeTitle, content: writeContent, url: writeLink, mall_name: writeMall, price: writePrice, shipping: writeShipping, 
+                              end_date: isNoLimit ? null : writeEndDate, 
+                              image: finalUrls[0] || post_to_edit.image, images: writeFiles.length > 0 ? finalUrls : post_to_edit.images 
+                            }).eq('id', editingPostId - 10000);
                             fetchTargetData();
                           }
                           setIsUploading(false); alert("수정 완료!"); navigate(post_to_edit.category);
