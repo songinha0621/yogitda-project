@@ -168,7 +168,6 @@ export default function Home() {
     fetchTargetData();
   }, [currentView, selectedSub, sortOption, activeSearch, currentPage, focusPostId, auth.userId]);
 
-  // 브라우저 뒤로가기 무한 늪 해결 및 이전 탭 기억 로직
   useEffect(() => {
     if (typeof window !== "undefined" && !window.history.state) {
       window.history.replaceState({ view: "로비" }, '', window.location.pathname + window.location.search);
@@ -281,8 +280,12 @@ export default function Home() {
   const [isNoLimit, setIsNoLimit] = useState(false); 
   
   const [commentInput, setCommentInput] = useState(""); const [replyInputs, setReplyInputs] = useState<any>({}); const [replyOpen, setReplyOpen] = useState<any>({});
-  const [adminBannerImg, setAdminBannerImg] = useState(mainBanner.imageUrl); const [adminBannerLink, setAdminBannerLink] = useState(mainBanner.targetLink); const [adminBannerActive, setAdminBannerActive] = useState(mainBanner.isActive);
-  const [bannerFile, setBannerFile] = useState<File | null>(null); // [수정됨] 관리자 배너 업로드용 파일 상태 추가
+  
+  const [adminBannerImg, setAdminBannerImg] = useState(mainBanner.imageUrl); 
+  const [adminBannerLink, setAdminBannerLink] = useState(mainBanner.targetLink); 
+  const [adminBannerActive, setAdminBannerActive] = useState(mainBanner.isActive);
+  const [bannerFile, setBannerFile] = useState<File | null>(null); // ✅ 파일 상태가 제대로 들어있는 버전!
+  
   const [adminEditCat, setAdminEditCat] = useState("옷"); const [adminAddSubInput, setAdminAddSubInput] = useState(""); const [adminRenameTarget, setAdminRenameTarget] = useState("선택안함"); const [adminRenameInput, setAdminRenameInput] = useState(""); const [adminDelTarget, setAdminDelTarget] = useState("선택안함");
   
   const navigate = (view: string) => { 
@@ -403,7 +406,9 @@ export default function Home() {
                   <>
                     <button onClick={() => navigate("로그인")} className="px-4 text-sm font-bold text-slate-600 hover:text-slate-900">로그인</button>
                     <button onClick={() => navigate("회원가입")} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors">시작하기</button>
-                  </                  <>
+                  </>
+                ) : (
+                  <>
                     <div className="text-sm px-2 font-bold text-slate-800 flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span> {userProfile.nickname}님
                     </div>
@@ -1322,7 +1327,7 @@ export default function Home() {
                         }
                       }} className="w-full p-3 bg-white border border-dashed border-slate-200 rounded-2xl text-xs cursor-pointer mb-3" />
                       
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">또는 배너 이미지 URL 주소</label>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5">또는 배너 이미지 URL 주소 (기존 방식)</label>
                       <input type="text" placeholder="https://..." value={adminBannerImg.startsWith('data:image') ? "" : adminBannerImg} onChange={e=>{ setAdminBannerImg(e.target.value); setBannerFile(null); }} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
                     </div>
                     <div>
