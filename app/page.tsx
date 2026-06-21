@@ -8,6 +8,46 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// 🛠️ [신규] 브라우저 자체 엔진을 활용한 이미지 자동 압축 함수
+const compressImage = (file: File): Promise<File> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200; // 가로 최대 1200px (이상이면 자동 축소)
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) ctx.drawImage(img, 0, 0, width, height);
+
+        // PNG는 투명도 유지를 위해 PNG 유지, 나머지는 JPEG로 변환하여 용량 극대화
+        const outType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(new File([blob], file.name, { type: outType, lastModified: Date.now() }));
+          } else {
+            resolve(file); // 압축 실패 시 안전하게 원본 파일 반환
+          }
+        }, outType, 0.8); // 80% 화질 유지 (육안으로 차이 없으나 용량은 대폭 감소)
+      };
+      img.onerror = () => resolve(file); // 파일 손상 시 통과
+    };
+    reader.onerror = () => resolve(file);
+  });
+};
+
 export default function Home() {
   const [currentView, setCurrentView] = useState("로비");
   const [searchQuery, setSearchQuery] = useState("");
@@ -284,7 +324,7 @@ export default function Home() {
   const [adminBannerImg, setAdminBannerImg] = useState(mainBanner.imageUrl); 
   const [adminBannerLink, setAdminBannerLink] = useState(mainBanner.targetLink); 
   const [adminBannerActive, setAdminBannerActive] = useState(mainBanner.isActive);
-  const [bannerFile, setBannerFile] = useState<File | null>(null); // ✅ 파일 상태가 제대로 들어있는 버전!
+  const [bannerFile, setBannerFile] = useState<File | null>(null); 
   
   const [adminEditCat, setAdminEditCat] = useState("옷"); const [adminAddSubInput, setAdminAddSubInput] = useState(""); const [adminRenameTarget, setAdminRenameTarget] = useState("선택안함"); const [adminRenameInput, setAdminRenameInput] = useState(""); const [adminDelTarget, setAdminDelTarget] = useState("선택안함");
   
@@ -332,14 +372,26 @@ export default function Home() {
     await supabase.from('notifications').insert([{ target_user: targetUser, text, post_id: postId, time: timeStr, read: false }]);
   };
 
-  const handleMultiImageUpload = (e: any) => { 
+  // 🛠️ [신규 반영] 이미지 업로드 시 자동 압축(리사이징) 로직 연결
+  const handleMultiImageUpload = async (e: any) => { 
     const files = Array.from(e.target.files) as File[];
-    setWriteFiles((prev: File[]) => [...prev, ...files]);
-    files.forEach(file => {
-      const reader = new FileReader(); 
-      reader.onloadend = () => { setWriteImages((prev: string[]) => [...prev, reader.result as string]); };
-      reader.readAsDataURL(file);
-    });
+    const compressedFiles: File[] = [];
+    const previewUrls: string[] = [];
+
+    for (const file of files) {
+      const compressed = await compressImage(file);
+      compressedFiles.push(compressed);
+      
+      const reader = new FileReader();
+      const url = await new Promise<string>((res) => {
+        reader.onloadend = () => res(reader.result as string);
+        reader.readAsDataURL(compressed);
+      });
+      previewUrls.push(url);
+    }
+    
+    setWriteFiles((prev: File[]) => [...prev, ...compressedFiles]);
+    setWriteImages((prev: string[]) => [...prev, ...previewUrls]);
   };
 
   const saveProfileInfo = async () => {
