@@ -251,15 +251,20 @@ export default function Home() {
     const { error } = await supabase.from('deals').update(dbFields).eq('id', dbId);
   };
 
-  const handleSocialLogin = async (provider: string) => {
+const handleSocialLogin = async (provider: string) => {
     const actualProvider = provider === 'naver' ? 'custom:naver' : provider;
+    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: actualProvider as any,
-      options: { redirectTo: window.location.origin }
+      options: { 
+        redirectTo: window.location.origin,
+        // 💡 카카오 로그인일 경우에만 이메일 요구를 빼고 요청하도록 강제!
+        ...(provider === 'kakao' && { scopes: 'profile_nickname profile_image' })
+      }
     });
+    
     if (error) alert("소셜 로그인 연결 실패: " + error.message);
   };
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session && session.user) {
