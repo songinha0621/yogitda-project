@@ -8,7 +8,7 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// 🛠️ [신규] 브라우저 자체 엔진을 활용한 이미지 자동 압축 함수
+// 🛠️ 브라우저 자체 엔진을 활용한 이미지 자동 압축 함수
 const compressImage = (file: File): Promise<File> => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -18,7 +18,7 @@ const compressImage = (file: File): Promise<File> => {
       img.src = e.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200; // 가로 최대 1200px (이상이면 자동 축소)
+        const MAX_WIDTH = 1200; 
         let width = img.width;
         let height = img.height;
 
@@ -32,17 +32,16 @@ const compressImage = (file: File): Promise<File> => {
         const ctx = canvas.getContext('2d');
         if (ctx) ctx.drawImage(img, 0, 0, width, height);
 
-        // PNG는 투명도 유지를 위해 PNG 유지, 나머지는 JPEG로 변환하여 용량 극대화
         const outType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
         canvas.toBlob((blob) => {
           if (blob) {
             resolve(new File([blob], file.name, { type: outType, lastModified: Date.now() }));
           } else {
-            resolve(file); // 압축 실패 시 안전하게 원본 파일 반환
+            resolve(file); 
           }
-        }, outType, 0.8); // 80% 화질 유지 (육안으로 차이 없으나 용량은 대폭 감소)
+        }, outType, 0.8); 
       };
-      img.onerror = () => resolve(file); // 파일 손상 시 통과
+      img.onerror = () => resolve(file); 
     };
     reader.onerror = () => resolve(file);
   });
@@ -94,10 +93,10 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
 
+  // 💡 [완벽 복구본] DB 연동 및 정렬 오류 해결된 데이터 불러오기 함수
   const fetchTargetData = async () => {
     setIsLoading(true);
     try {
-      // 💡 [신규 추가] 사이트 설정(배너, 말머리) DB에서 불러오기
       const { data: settingsData } = await supabase.from('site_settings').select('*').eq('id', 1).single();
       if (settingsData) {
         if (settingsData.main_banner) setMainBanner(settingsData.main_banner);
@@ -140,6 +139,7 @@ export default function Home() {
           query = query.or(`title.ilike.%${activeSearch}%,content.ilike.%${activeSearch}%`);
         }
 
+        // 💡 [복구] 추천순 정렬 DB 페이징 정상화
         if (sortOption === "조회순") {
           query = query.order('views', { ascending: false });
         } else if (sortOption === "추천순") {
@@ -153,40 +153,64 @@ export default function Home() {
         query = query.range(from, to);
 
       } else if (focusPostId) {
-        query = query.eq('id', focusPostId - 10000);
+        query = query.eq('id', focusPostId < 10000 ? focusPostId : focusPostId - 10000);
       } else {
         query = query.order('id', { ascending: false }).limit(200);
       }
 
       const { data, count } = await query;
 
-      if (data) {
-        const mappedPosts = data.map((item: any) => ({
-          id: item.id + 10000, 
-          author: item.author || "익명회원", 
-          category: item.category || "핫딜 커뮤니티", 
-          subCategory: item.sub_category || "할인제보",
-          title: item.title || "제목 없음", 
-          content: item.content || "내용 없음", 
-          link: item.url || item.link || "",
-          image: item.image || null, 
-          images: item.images || [], 
-          views: item.views || 0, 
-          upvotes: item.upvotes || 0, 
-          upvotedBy: item.upvoted_by || [],
-          thermoVotes: item.thermo_votes || { hot: 0, soso: 0, cold: 0 }, 
-          thermoVotedBy: item.thermo_voted_by || {},
-          reportedBy: item.reported_by || [], 
-          scrappedBy: item.scrapped_by || [],
-          time: item.created_at ? new Date(item.created_at).toISOString().replace('T', ' ').slice(0, 16) : new Date().toISOString().slice(0, 16).replace('T', ' '),
-          endDate: item.end_date || null, 
-          status: item.status || "진행중", 
-          comments: item.comments || [],
-          mallName: item.mall_name || "", 
-          price: item.price || "", 
-          shipping: item.shipping || ""
-        }));
+      if (data && data.length > 0) {
+        const postIds = data.map(d => d.id);
         
+        const { data: actionsData } = await supabase.from('post_actions').select('*').in('post_id', postIds);
+        const { data: commentsData } = await supabase.from('post_comments').select('*').in('post_id', postIds);
+
+        const mappedPosts = data.map((item: any) => {
+          const pActions = actionsData?.filter(a => a.post_id === item.id) || [];
+          const pCommentsRaw = commentsData?.filter(c => c.post_id === item.id) || [];
+          
+          const parentComments = pCommentsRaw.filter(c => !c.parent_id).map(c => ({
+            id: c.id, user: c.user_id, text: c.text, time: c.time,
+            replies: pCommentsRaw.filter(r => r.parent_id === c.id).map(r => ({ id: r.id, user: r.user_id, text: r.text, time: r.time }))
+          }));
+
+          const hotVotes = pActions.filter(a => a.action_type === 'hot').map(a => a.user_id);
+          const sosoVotes = pActions.filter(a => a.action_type === 'soso').map(a => a.user_id);
+          const coldVotes = pActions.filter(a => a.action_type === 'cold').map(a => a.user_id);
+          
+          const thermoVotedByMap: any = {};
+          hotVotes.forEach(u => thermoVotedByMap[u] = 'hot');
+          sosoVotes.forEach(u => thermoVotedByMap[u] = 'soso');
+          coldVotes.forEach(u => thermoVotedByMap[u] = 'cold');
+
+          return {
+            id: item.id + 10000, 
+            author: item.author || "익명회원", 
+            category: item.category || "핫딜 커뮤니티", 
+            subCategory: item.sub_category || "할인제보",
+            title: item.title || "제목 없음", 
+            content: item.content || "내용 없음", 
+            link: item.url || item.link || "",
+            image: item.image || null, 
+            images: item.images || [], 
+            views: item.views || 0, 
+            time: item.created_at ? new Date(item.created_at).toISOString().replace('T', ' ').slice(0, 16) : new Date().toISOString().slice(0, 16).replace('T', ' '),
+            endDate: item.end_date || null, 
+            status: item.status || "진행중", 
+            mallName: item.mall_name || "", 
+            price: item.price || "", 
+            shipping: item.shipping || "",
+            upvotes: item.upvotes || 0, // DB 원본 추천수 사용 (동기화됨)
+            upvotedBy: pActions.filter(a => a.action_type === 'upvote').map(a => a.user_id),
+            scrappedBy: pActions.filter(a => a.action_type === 'scrap').map(a => a.user_id),
+            reportedBy: pActions.filter(a => a.action_type === 'report').map(a => a.user_id),
+            thermoVotes: { hot: hotVotes.length, soso: sosoVotes.length, cold: coldVotes.length },
+            thermoVotedBy: thermoVotedByMap,
+            comments: parentComments
+          };
+        });
+
         setPosts(mappedPosts);
         
         if (CATEGORIES.includes(currentView) && !focusPostId && count !== null) {
@@ -204,6 +228,8 @@ export default function Home() {
             }
           }
         }, 50);
+      } else {
+        setPosts([]);
       }
     } catch (e) { 
       console.warn("데이터 로드 오류"); 
@@ -241,37 +267,92 @@ export default function Home() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const syncUpdateToDB = async (postId: number, updateFields: any) => {
-    if (postId < 10000) return; 
-    const dbId = postId - 10000; 
+  // 💡 [완벽 복구본] 온도 배타적 선택 + 신고 누적 시 자동삭제 기능 탑재
+  const togglePostAction = async (postId: number, actionType: string) => {
+    if (!auth.loggedIn) return alert("로그인 필요");
+    const dbId = postId < 10000 ? postId : postId - 10000;
 
-    const dbFields: any = {};
-    if (updateFields.views !== undefined) dbFields.views = updateFields.views;
-    if (updateFields.upvotes !== undefined) dbFields.upvotes = updateFields.upvotes;
-    if (updateFields.upvotedBy !== undefined) dbFields.upvoted_by = updateFields.upvotedBy;
-    if (updateFields.thermoVotes !== undefined) dbFields.thermo_votes = updateFields.thermoVotes;
-    if (updateFields.thermoVotedBy !== undefined) dbFields.thermo_voted_by = updateFields.thermoVotedBy;
-    if (updateFields.scrappedBy !== undefined) dbFields.scrapped_by = updateFields.scrappedBy;
-    if (updateFields.reportedBy !== undefined) dbFields.reported_by = updateFields.reportedBy;
-    if (updateFields.comments !== undefined) dbFields.comments = updateFields.comments;
+    const { data: existingActions } = await supabase.from('post_actions').select('*').eq('post_id', dbId).eq('user_id', auth.userId);
+    
+    let isAdding = true;
 
-    const { error } = await supabase.from('deals').update(dbFields).eq('id', dbId);
+    if (['hot', 'soso', 'cold'].includes(actionType)) {
+      const existingThermo = existingActions?.find(a => ['hot', 'soso', 'cold'].includes(a.action_type));
+      if (existingThermo) {
+        await supabase.from('post_actions').delete().eq('id', existingThermo.id);
+        if (existingThermo.action_type === actionType) {
+          fetchTargetData(); return; 
+        }
+      }
+      await supabase.from('post_actions').insert([{ post_id: dbId, user_id: auth.userId, action_type: actionType }]);
+    } 
+    else {
+      const targetAction = existingActions?.find(a => a.action_type === actionType);
+      if (targetAction) {
+        await supabase.from('post_actions').delete().eq('id', targetAction.id);
+        isAdding = false;
+      } else {
+        await supabase.from('post_actions').insert([{ post_id: dbId, user_id: auth.userId, action_type: actionType }]);
+      }
+    }
+
+    const targetPost = posts.find(p => p.id === postId);
+    if (!targetPost) return;
+
+    if (actionType === 'upvote') {
+      const newUpvotes = isAdding ? targetPost.upvotes + 1 : targetPost.upvotes - 1;
+      await supabase.from('deals').update({ upvotes: newUpvotes }).eq('id', dbId);
+    }
+
+    if (actionType === 'report' && isAdding) {
+      if ((targetPost.reportedBy?.length || 0) + 1 >= 10) {
+        alert("신고 10회 누적으로 해당 게시물이 자동 블라인드(삭제) 처리되었습니다.");
+        if (targetPost.images && targetPost.images.length > 0) {
+          const fileNames = targetPost.images.map((url: string) => url.split('/').pop());
+          await supabase.storage.from('images').remove(fileNames);
+        } else if (targetPost.image) {
+          const fileName = targetPost.image.split('/').pop();
+          await supabase.storage.from('images').remove([fileName]);
+        }
+        await supabase.from('deals').delete().eq('id', dbId);
+        navigate(currentView);
+        return;
+      }
+    }
+
+    fetchTargetData(); 
   };
 
-const handleSocialLogin = async (provider: string) => {
+  const submitNewComment = async (postId: number, text: string, parentId: number | null = null) => {
+    if (!auth.loggedIn) return alert("로그인 필요");
+    const dbId = postId < 10000 ? postId : postId - 10000;
+    const timeStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    
+    await supabase.from('post_comments').insert([{ post_id: dbId, user_id: auth.userId, text: text, parent_id: parentId, time: timeStr }]);
+    fetchTargetData(); 
+  };
+
+  const deleteComment = async (commentId: number) => {
+    if (!window.confirm("정말로 이 댓글(답글)을 삭제하시겠습니까?")) return;
+    await supabase.from('post_comments').delete().eq('id', commentId);
+    await supabase.from('post_comments').delete().eq('parent_id', commentId);
+    fetchTargetData();
+  };
+
+  const handleSocialLogin = async (provider: string) => {
     const actualProvider = provider === 'naver' ? 'custom:naver' : provider;
     
     const { error } = await supabase.auth.signInWithOAuth({
       provider: actualProvider as any,
       options: { 
         redirectTo: window.location.origin,
-        // 💡 카카오 로그인일 경우에만 이메일 요구를 빼고 요청하도록 강제!
         ...(provider === 'kakao' && { scopes: 'profile_nickname profile_image' })
       }
     });
     
     if (error) alert("소셜 로그인 연결 실패: " + error.message);
   };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session && session.user) {
@@ -360,7 +441,8 @@ const handleSocialLogin = async (provider: string) => {
       setPosts((prev: any[]) => prev.map(p => {
         if (p.id === postId) {
           const newViews = p.views + 1;
-          syncUpdateToDB(postId, { views: newViews }); 
+          const dbId = postId < 10000 ? postId : postId - 10000;
+          supabase.from('deals').update({ views: newViews }).eq('id', dbId); 
           return { ...p, views: newViews };
         }
         return p;
@@ -384,7 +466,6 @@ const handleSocialLogin = async (provider: string) => {
     await supabase.from('notifications').insert([{ target_user: targetUser, text, post_id: postId, time: timeStr, read: false }]);
   };
 
-  // 🛠️ [신규 반영] 이미지 업로드 시 자동 압축(리사이징) 로직 연결
   const handleMultiImageUpload = async (e: any) => { 
     const files = Array.from(e.target.files) as File[];
     const compressedFiles: File[] = [];
@@ -519,9 +600,8 @@ const handleSocialLogin = async (provider: string) => {
                 <p className="mb-6 text-slate-500 text-sm">안전하고 똑똑하게 혜택을 모아보세요.</p>
                 
                 <div className="space-y-3 mb-6">
-  <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm flex justify-center items-center gap-2 text-sm hover:opacity-95 transition-opacity">💬 카카오로 3초만에 시작</button>
-  {/* 네이버 버튼 숨김 처리 완료 */}
-</div>
+                  <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm flex justify-center items-center gap-2 text-sm hover:opacity-95 transition-opacity">💬 카카오로 3초만에 시작</button>
+                </div>
                 
                 <div className="relative flex py-2 items-center">
                   <div className="flex-grow border-t border-slate-100"></div>
@@ -560,8 +640,8 @@ const handleSocialLogin = async (provider: string) => {
                 <h1 className="text-2xl font-black mb-6 tracking-tight">회원가입</h1>
                 <div className="space-y-4">
                   <div className="flex gap-3 mb-2">
-  <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm text-sm hover:opacity-90 transition-opacity">💬 카카오로 3초만에 시작</button>
-</div>
+                    <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm text-sm hover:opacity-90 transition-opacity">💬 카카오로 3초만에 시작</button>
+                  </div>
                   
                   <div className="relative flex py-2 items-center">
                     <div className="flex-grow border-t border-slate-100"></div>
@@ -849,59 +929,25 @@ const handleSocialLogin = async (provider: string) => {
                     <div className="flex flex-wrap gap-2 pt-6 justify-center">
                       {isHot ? (
                         <>
-                          <button onClick={() => {
-                            if(!auth.loggedIn) return alert("로그인 필요");
-                            let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) }, newBy = { ...(post.thermoVotedBy || {}) }, newUps = post.upvotes;
-                            if(newBy[auth.userId] === "hot") { newV.hot--; delete newBy[auth.userId]; newUps--; } 
-                            else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.hot++; newBy[auth.userId]="hot"; newUps++; }
-                            setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy, upvotes: newUps} : p));
-                            syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy, upvotes: newUps });
-                          }} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="hot" ? "bg-orange-500 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                          <button onClick={() => togglePostAction(post.id, 'hot')} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="hot" ? "bg-orange-500 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
                             🔥 대박이다 ({post.thermoVotes?.hot||0})
                           </button>
                           
-                          <button onClick={() => {
-                            if(!auth.loggedIn) return alert("로그인 필요");
-                            let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) }, newBy = { ...(post.thermoVotedBy || {}) };
-                            if(newBy[auth.userId] === "soso") { newV.soso--; delete newBy[auth.userId]; } 
-                            else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.soso++; newBy[auth.userId]="soso"; }
-                            setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy} : p));
-                            syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy });
-                          }} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="soso" ? "bg-slate-700 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                          <button onClick={() => togglePostAction(post.id, 'soso')} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="soso" ? "bg-slate-700 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
                             🤔 평범함 ({post.thermoVotes?.soso||0})
                           </button>
 
-                          <button onClick={() => {
-                            if(!auth.loggedIn) return alert("로그인 필요");
-                            let newV = { ...(post.thermoVotes || {hot:0,soso:0,cold:0}) }, newBy = { ...(post.thermoVotedBy || {}) };
-                            if(newBy[auth.userId] === "cold") { newV.cold--; delete newBy[auth.userId]; } 
-                            else { if(newBy[auth.userId]) newV[newBy[auth.userId]]--; newV.cold++; newBy[auth.userId]="cold"; }
-                            setPosts((prev: any[]) => prev.map(p=> p.id===post.id ? {...p, thermoVotes: newV, thermoVotedBy: newBy} : p));
-                            syncUpdateToDB(post.id, { thermoVotes: newV, thermoVotedBy: newBy });
-                          }} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="cold" ? "bg-blue-500 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                          <button onClick={() => togglePostAction(post.id, 'cold')} className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${post.thermoVotedBy?.[auth.userId]==="cold" ? "bg-blue-500 text-white shadow-md scale-[0.98]" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
                             🥶 별로임 ({post.thermoVotes?.cold||0})
                           </button>
                         </>
                       ) : (
-                        <button onClick={() => {
-                          if(!auth.loggedIn) return alert("로그인 필요");
-                          const isUp = post.upvotedBy?.includes(auth.userId);
-                          const newUps = isUp ? post.upvotes - 1 : post.upvotes + 1;
-                          const newUpBy = isUp ? post.upvotedBy.filter((u:any)=>u!==auth.userId) : [...(post.upvotedBy||[]), auth.userId];
-                          setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, upvotes: newUps, upvotedBy: newUpBy} : p));
-                          syncUpdateToDB(post.id, { upvotes: newUps, upvotedBy: newUpBy });
-                        }} className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all ${post.upvotedBy?.includes(auth.userId) ? "bg-blue-600 text-white" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                        <button onClick={() => togglePostAction(post.id, 'upvote')} className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all ${post.upvotedBy?.includes(auth.userId) ? "bg-blue-600 text-white" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
                           {post.upvotedBy?.includes(auth.userId) ? `👍 추천 취소됨 (${post.upvotes})` : `👍 유용해요 (${post.upvotes})`}
                         </button>
                       )}
                       
-                      <button onClick={() => {
-                        if(!auth.loggedIn) return alert("로그인 필요");
-                        const isScrap = post.scrappedBy?.includes(auth.userId);
-                        const newScrap = isScrap ? post.scrappedBy.filter((u:any)=>u!==auth.userId) : [...(post.scrappedBy||[]), auth.userId];
-                        setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, scrappedBy: newScrap} : p));
-                        syncUpdateToDB(post.id, { scrappedBy: newScrap });
-                      }} className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all ${post.scrappedBy?.includes(auth.userId) ? "bg-yellow-400 text-slate-800" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
+                      <button onClick={() => togglePostAction(post.id, 'scrap')} className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all ${post.scrappedBy?.includes(auth.userId) ? "bg-yellow-400 text-slate-800" : "bg-slate-50 border border-slate-200/60 text-slate-700 hover:bg-slate-100"}`}>
                         ⭐ 스크랩
                       </button>
                     </div>
@@ -909,17 +955,7 @@ const handleSocialLogin = async (provider: string) => {
                     <div className="flex gap-2 justify-center pt-2">
                       <button onClick={async () => {
                         if(!auth.loggedIn) return alert("로그인 필요");
-                        const isRep = post.reportedBy?.includes(auth.userId);
-                        const newRep = isRep ? post.reportedBy.filter((u:any)=>u!==auth.userId) : [...(post.reportedBy||[]), auth.userId];
-                        if(newRep.length >= 10) { 
-                          alert("신고 10회 누적으로 글이 블라인드 처리되었습니다."); 
-                          setPosts((prev: any[]) => prev.filter(p=>p.id!==post.id));
-                          if (post.id >= 10000) await supabase.from('deals').delete().eq('id', post.id - 10000);
-                          navigate(currentView); 
-                        } else {
-                          setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, reportedBy: newRep} : p));
-                          syncUpdateToDB(post.id, { reportedBy: newRep });
-                        }
+                        await togglePostAction(post.id, 'report');
                       }} className="px-4 py-2 bg-red-50 text-red-500 text-[11px] font-bold rounded-xl hover:bg-red-100 transition-colors">
                         🚨 신고하기 ({post.reportedBy?.length||0})
                       </button>
@@ -932,13 +968,21 @@ const handleSocialLogin = async (provider: string) => {
                             else { setWriteEndDate(new Date().toISOString().split('T')[0]); setIsNoLimit(true); }
                             setWriteMall(post.mallName||""); setWritePrice(post.price||""); setWriteShipping(post.shipping||"무료배송"); setEditingPostId(post.id); setCurrentView("글수정"); window.scrollTo(0,0);
                           }} className="px-4 py-2 bg-slate-100 text-slate-700 text-[11px] font-bold rounded-xl hover:bg-slate-200 transition-colors">수정</button>
+                          
                           <button onClick={async ()=>{ 
                             if (window.confirm("삭제하시겠습니까?")) {
+                              if (post.images && post.images.length > 0) {
+                                const fileNames = post.images.map((url: string) => url.split('/').pop());
+                                await supabase.storage.from('images').remove(fileNames);
+                              } else if (post.image) {
+                                const fileName = post.image.split('/').pop();
+                                await supabase.storage.from('images').remove([fileName]);
+                              }
                               setPosts((prev: any[]) => prev.filter(p=>p.id!==post.id)); 
                               if (post.id >= 10000) await supabase.from('deals').delete().eq('id', post.id - 10000);
                               navigate(currentView); 
                             }
-                          }} className="px-4 py-2 bg-red-600 text-white text-[11px] font-bold rounded-xl hover:bg-red-700 transition-colors">삭제</button>
+                          }} className="px-4 py-2 bg-red-600 text-white text-[11px] font-bold rounded-xl hover:bg-red-700 transition-colors">삭제</button>                        
                         </>
                       )}
                     </div>
@@ -953,13 +997,7 @@ const handleSocialLogin = async (provider: string) => {
                               : {cmt.text}
                               <span className="text-slate-400 text-[10px] ml-2">({cmt.time})</span>
                               {(auth.userId === cmt.user || auth.userRole === "admin") && (
-                                <button onClick={() => {
-                                  if (window.confirm("정말로 이 댓글을 삭제하시겠습니까?")) {
-                                    const newComments = post.comments.filter((c:any) => c.id !== cmt.id);
-                                    setPosts((prev: any[]) => prev.map(p => p.id === post.id ? {...p, comments: newComments} : p));
-                                    syncUpdateToDB(post.id, { comments: newComments });
-                                  }
-                                }} className="text-[10px] text-red-500 hover:text-red-700 ml-2 font-bold bg-white px-2 py-0.5 rounded-md border border-red-100">삭제</button>
+                                <button onClick={() => deleteComment(cmt.id)} className="text-[10px] text-red-500 hover:text-red-700 ml-2 font-bold bg-white px-2 py-0.5 rounded-md border border-red-100">삭제</button>
                               )}
                             </div>
                             
@@ -968,14 +1006,7 @@ const handleSocialLogin = async (provider: string) => {
                                 ↳ <button onClick={() => handleAuthorClick(rep.user)} className="font-black text-slate-600 hover:underline mr-1">{getUserDisplayName(rep.user)}</button>: {rep.text}
                                 <span className="text-slate-400 text-[10px] ml-2">({rep.time})</span>
                                 {(auth.userId === rep.user || auth.userRole === "admin") && (
-                                  <button onClick={() => {
-                                    if (window.confirm("정말로 이 답글을 삭제하시겠습니까?")) {
-                                      const newReplies = cmt.replies.filter((_:any, idx:number) => idx !== rIdx);
-                                      const newComments = post.comments.map((c:any) => c.id === cmt.id ? {...c, replies: newReplies} : c);
-                                      setPosts((prev: any[]) => prev.map(p => p.id === post.id ? {...p, comments: newComments} : p));
-                                      syncUpdateToDB(post.id, { comments: newComments });
-                                    }
-                                  }} className="text-[10px] text-red-500 hover:text-red-700 ml-2 font-bold bg-slate-50 px-2 py-0.5 rounded-md border border-red-100">삭제</button>
+                                  <button onClick={() => deleteComment(rep.id)} className="text-[10px] text-red-500 hover:text-red-700 ml-2 font-bold bg-slate-50 px-2 py-0.5 rounded-md border border-red-100">삭제</button>
                                 )}
                               </div>
                             ))}
@@ -990,9 +1021,7 @@ const handleSocialLogin = async (provider: string) => {
                                     <input type="text" placeholder="답글 내용" value={replyInputs[`${post.id}_${cmt.id}`] || ""} onChange={(e)=>setReplyInputs({...replyInputs, [`${post.id}_${cmt.id}`]: e.target.value})} className="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-400 transition-all" />
                                     <button onClick={()=>{
                                       if(!replyInputs[`${post.id}_${cmt.id}`]) return;
-                                      const newComments = post.comments.map((c:any)=>c.id===cmt.id ? {...c, replies: [...(c.replies||[]), {user: auth.userId, text: replyInputs[`${post.id}_${cmt.id}`], time: new Date().toISOString().replace('T', ' ').slice(0, 16)}]} : c);
-                                      setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, comments: newComments} : p));
-                                      syncUpdateToDB(post.id, { comments: newComments });
+                                      submitNewComment(post.id, replyInputs[`${post.id}_${cmt.id}`], cmt.id);
                                       setReplyInputs({...replyInputs, [`${post.id}_${cmt.id}`]: ""}); 
                                       setReplyOpen((prev:any)=>({...prev, [`${post.id}_${cmt.id}`]: false})); 
                                       addNotify(cmt.user, "새로운 답글이 달렸습니다.", post.id);
@@ -1010,9 +1039,8 @@ const handleSocialLogin = async (provider: string) => {
                           <input type="text" placeholder="댓글로 소통을 시작해 보세요." value={commentInput} onChange={(e)=>setCommentInput(e.target.value)} className="flex-1 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:border-slate-400 transition-all" />
                           <button onClick={()=>{
                             if(!commentInput) return;
-                            const newComments = [...(post.comments||[]), {id: Date.now(), user: auth.userId, text: commentInput, time: new Date().toISOString().replace('T', ' ').slice(0, 16), replies: []}];
-                            setPosts((prev: any[]) => prev.map(p=>p.id===post.id ? {...p, comments: newComments} : p));
-                            syncUpdateToDB(post.id, { comments: newComments }); setCommentInput("");
+                            submitNewComment(post.id, commentInput, null);
+                            setCommentInput("");
                             addNotify(post.author, "게시글에 새 피드백이 쌓였습니다.", post.id); 
                           }} className="px-6 py-3.5 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 shrink-0">작성</button>
                         </div>
@@ -1349,7 +1377,7 @@ const handleSocialLogin = async (provider: string) => {
               </div>
             )}
 
-{/* 13. 사이트 관리 */}
+            {/* 13. 사이트 관리 */}
             {currentView === "사이트 관리" && auth.userRole === "admin" && (
               <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-8">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-4">
@@ -1366,6 +1394,14 @@ const handleSocialLogin = async (provider: string) => {
                       <div className="truncate flex-1">[{p.category}] {p.title} <span className="text-red-500 ml-2 bg-white px-2 py-0.5 rounded-lg shadow-sm">누적 신고: {p.reportedBy.length}회</span></div>
                       <button onClick={async ()=>{ 
                         if (window.confirm("즉시 폭파하시겠습니까?")) {
+                          if (p.images && p.images.length > 0) {
+                            const fileNames = p.images.map((url: string) => url.split('/').pop());
+                            await supabase.storage.from('images').remove(fileNames);
+                          } else if (p.image) {
+                            const fileName = p.image.split('/').pop();
+                            await supabase.storage.from('images').remove([fileName]);
+                          }
+
                           setPosts((prev: any[]) => prev.filter(post=>post.id!==p.id)); 
                           if(p.id >= 10000) await supabase.from('deals').delete().eq('id', p.id - 10000);
                         }
@@ -1416,7 +1452,6 @@ const handleSocialLogin = async (provider: string) => {
                           }
                         }
                         
-                        // 💡 [수정] DB에 영구 저장 로직 추가
                         const newBanner = { imageUrl: finalUrl, targetLink: adminBannerLink, isActive: adminBannerActive };
                         setMainBanner(newBanner); 
                         await supabase.from('site_settings').update({ main_banner: newBanner }).eq('id', 1);
@@ -1447,7 +1482,6 @@ const handleSocialLogin = async (provider: string) => {
                         const newArr = [...subCategories[adminEditCat]]; const endIdx = newArr.indexOf("종료"); 
                         if(endIdx !== -1) newArr.splice(endIdx, 0, adminAddSubInput); else newArr.push(adminAddSubInput);
                         
-                        // 💡 [수정] DB에 영구 저장 로직 추가
                         const newSubCats = {...subCategories, [adminEditCat]: newArr};
                         setSubCategories(newSubCats); 
                         await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
@@ -1467,7 +1501,6 @@ const handleSocialLogin = async (provider: string) => {
                         if(adminRenameTarget==="선택안함" || !adminRenameInput) return alert("입력 오류"); 
                         if(subCategories[adminEditCat].includes(adminRenameInput)) return alert("중복 발생");
                         
-                        // 💡 [수정] DB에 영구 저장 로직 추가
                         const newSubCats = { ...subCategories, [adminEditCat]: subCategories[adminEditCat].map((s:any)=>s===adminRenameTarget ? adminRenameInput : s) };
                         setSubCategories(newSubCats);
                         await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
@@ -1487,7 +1520,6 @@ const handleSocialLogin = async (provider: string) => {
                       <button onClick={async ()=>{
                         if(adminDelTarget==="선택안함") return alert("선택하세요");
                         
-                        // 💡 [수정] DB에 영구 저장 로직 추가
                         const newSubCats = { ...subCategories, [adminEditCat]: subCategories[adminEditCat].filter((s:any)=>s!==adminDelTarget) };
                         setSubCategories(newSubCats);
                         await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
@@ -1499,8 +1531,8 @@ const handleSocialLogin = async (provider: string) => {
                   </div>
                 </div>
               </div>
-            )};
-            </div> 
+            )}
+          </div> 
         </div> 
     </>
   );
