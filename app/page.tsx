@@ -97,6 +97,13 @@ export default function Home() {
   const fetchTargetData = async () => {
     setIsLoading(true);
     try {
+      // 💡 [신규 추가] 사이트 설정(배너, 말머리) DB에서 불러오기
+      const { data: settingsData } = await supabase.from('site_settings').select('*').eq('id', 1).single();
+      if (settingsData) {
+        if (settingsData.main_banner) setMainBanner(settingsData.main_banner);
+        if (settingsData.sub_categories) setSubCategories(settingsData.sub_categories);
+      }
+      
       const { data: profilesRes } = await supabase.from('profiles').select('*');
       if (profilesRes) {
         const pMap: any = {};
@@ -512,9 +519,9 @@ const handleSocialLogin = async (provider: string) => {
                 <p className="mb-6 text-slate-500 text-sm">안전하고 똑똑하게 혜택을 모아보세요.</p>
                 
                 <div className="space-y-3 mb-6">
-                  <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm flex justify-center items-center gap-2 text-sm hover:opacity-95 transition-opacity">💬 카카오로 3초만에 시작</button>
-                  <button onClick={() => handleSocialLogin('naver')} className="w-full bg-[#03C75A] text-white font-bold py-3.5 rounded-2xl shadow-sm flex justify-center items-center gap-2 text-sm hover:opacity-95 transition-opacity">N 네이버로 시작하기</button>
-                </div>
+  <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm flex justify-center items-center gap-2 text-sm hover:opacity-95 transition-opacity">💬 카카오로 3초만에 시작</button>
+  {/* 네이버 버튼 숨김 처리 완료 */}
+</div>
                 
                 <div className="relative flex py-2 items-center">
                   <div className="flex-grow border-t border-slate-100"></div>
@@ -553,9 +560,8 @@ const handleSocialLogin = async (provider: string) => {
                 <h1 className="text-2xl font-black mb-6 tracking-tight">회원가입</h1>
                 <div className="space-y-4">
                   <div className="flex gap-3 mb-2">
-                    <button onClick={() => handleSocialLogin('kakao')} className="flex-1 bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm text-sm hover:opacity-90 transition-opacity">💬 카카오 시작</button>
-                    <button onClick={() => handleSocialLogin('naver')} className="flex-1 bg-[#03C75A] text-white font-bold py-3.5 rounded-2xl shadow-sm text-sm hover:opacity-90 transition-opacity">N 네이버 시작</button>
-                  </div>
+  <button onClick={() => handleSocialLogin('kakao')} className="w-full bg-[#FEE500] text-black font-bold py-3.5 rounded-2xl shadow-sm text-sm hover:opacity-90 transition-opacity">💬 카카오로 3초만에 시작</button>
+</div>
                   
                   <div className="relative flex py-2 items-center">
                     <div className="flex-grow border-t border-slate-100"></div>
@@ -1343,7 +1349,7 @@ const handleSocialLogin = async (provider: string) => {
               </div>
             )}
 
-            {/* 13. 사이트 관리 */}
+{/* 13. 사이트 관리 */}
             {currentView === "사이트 관리" && auth.userRole === "admin" && (
               <div className="bg-white border border-slate-100 p-6 md:p-8 rounded-3xl shadow-sm space-y-8">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-4">
@@ -1368,7 +1374,6 @@ const handleSocialLogin = async (provider: string) => {
                   ))}
                 </div>
 
-                {/* [수정됨] 메인 배너 이미지 파일 직접 첨부 기능 탑재 완료 */}
                 <div className="pt-8 border-t border-slate-100 space-y-4">
                   <h3 className="font-black text-sm text-slate-800">🖼️ 메인 로비 배너 제어</h3>
                   <div className="bg-slate-50 border border-slate-100 p-5 md:p-6 rounded-3xl space-y-4">
@@ -1410,9 +1415,14 @@ const handleSocialLogin = async (provider: string) => {
                             return;
                           }
                         }
-                        setMainBanner({ imageUrl: finalUrl, targetLink: adminBannerLink, isActive: adminBannerActive }); 
+                        
+                        // 💡 [수정] DB에 영구 저장 로직 추가
+                        const newBanner = { imageUrl: finalUrl, targetLink: adminBannerLink, isActive: adminBannerActive };
+                        setMainBanner(newBanner); 
+                        await supabase.from('site_settings').update({ main_banner: newBanner }).eq('id', 1);
+                        
                         setBannerFile(null);
-                        alert("로비 배너 교체 완료!"); 
+                        alert("로비 배너 교체 완료! (DB 저장 완료)"); 
                       }} className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 shadow-sm">저장 및 적용</button>
                     </div>
                   </div>
@@ -1431,12 +1441,18 @@ const handleSocialLogin = async (provider: string) => {
                     <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3">
                       <b className="text-xs block text-slate-700">➕ 말머리 추가</b>
                       <input type="text" value={adminAddSubInput} onChange={e=>setAdminAddSubInput(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="새로운 이름" />
-                      <button onClick={()=>{
+                      <button onClick={async ()=>{
                         if(!adminAddSubInput) return; 
                         if(subCategories[adminEditCat].includes(adminAddSubInput)) return alert("이미 존재합니다.");
                         const newArr = [...subCategories[adminEditCat]]; const endIdx = newArr.indexOf("종료"); 
                         if(endIdx !== -1) newArr.splice(endIdx, 0, adminAddSubInput); else newArr.push(adminAddSubInput);
-                        setSubCategories((prev: any) => ({...prev, [adminEditCat]: newArr})); setAdminAddSubInput(""); alert("추가 완료!");
+                        
+                        // 💡 [수정] DB에 영구 저장 로직 추가
+                        const newSubCats = {...subCategories, [adminEditCat]: newArr};
+                        setSubCategories(newSubCats); 
+                        await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
+                        
+                        setAdminAddSubInput(""); alert("추가 및 저장 완료!");
                       }} className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-colors">추가 실행</button>
                     </div>
 
@@ -1447,11 +1463,17 @@ const handleSocialLogin = async (provider: string) => {
                         {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
                       </select>
                       <input type="text" value={adminRenameInput} onChange={e=>setAdminRenameInput(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="바꿀 이름" />
-                      <button onClick={()=>{
+                      <button onClick={async ()=>{
                         if(adminRenameTarget==="선택안함" || !adminRenameInput) return alert("입력 오류"); 
                         if(subCategories[adminEditCat].includes(adminRenameInput)) return alert("중복 발생");
-                        setSubCategories((prev: any) => ({ ...prev, [adminEditCat]: prev[adminEditCat].map((s:any)=>s===adminRenameTarget ? adminRenameInput : s) }));
-                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminRenameTarget) ? {...p, subCategory: adminRenameInput} : p)); alert("변경 완료!");
+                        
+                        // 💡 [수정] DB에 영구 저장 로직 추가
+                        const newSubCats = { ...subCategories, [adminEditCat]: subCategories[adminEditCat].map((s:any)=>s===adminRenameTarget ? adminRenameInput : s) };
+                        setSubCategories(newSubCats);
+                        await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
+                        
+                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminRenameTarget) ? {...p, subCategory: adminRenameInput} : p)); 
+                        alert("변경 및 저장 완료!");
                       }} className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-colors">변경 실행</button>
                     </div>
 
@@ -1462,18 +1484,23 @@ const handleSocialLogin = async (provider: string) => {
                         {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
                       </select>
                       <div className="h-[42px]"></div>
-                      <button onClick={()=>{
+                      <button onClick={async ()=>{
                         if(adminDelTarget==="선택안함") return alert("선택하세요");
-                        setSubCategories((prev: any) => ({ ...prev, [adminEditCat]: prev[adminEditCat].filter((s:any)=>s!==adminDelTarget) }));
-                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminDelTarget) ? {...p, subCategory: "일반"} : p)); alert("삭제 완료!");
+                        
+                        // 💡 [수정] DB에 영구 저장 로직 추가
+                        const newSubCats = { ...subCategories, [adminEditCat]: subCategories[adminEditCat].filter((s:any)=>s!==adminDelTarget) };
+                        setSubCategories(newSubCats);
+                        await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
+                        
+                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminDelTarget) ? {...p, subCategory: "일반"} : p)); 
+                        alert("삭제 및 저장 완료!");
                       }} className="w-full py-3 bg-red-600 text-white rounded-2xl text-xs font-bold hover:bg-red-700 transition-colors">영구 삭제</button>
                     </div>
                   </div>
                 </div>
               </div>
-            )}
-
-          </div> 
+            )};
+            </div> 
         </div> 
     </>
   );
