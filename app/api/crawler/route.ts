@@ -10,8 +10,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export async function GET() {
   console.log("🤖 [쌍끌이 봇] 네이버페이 + 페이코 실전 가동 (용량 최적화 버전)...");
-  const scrapedDeals: any[] = [];
-  
+  const scrapedDeals: any[] = [];  
 
   // ====================================================================
   // 1. 네이버페이 혜택 수집
