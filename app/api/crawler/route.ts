@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 // 🚨 아래 꼭 대표님의 진짜 익명 키로 바꿔주세요!
-const SUPABASE_ANON_KEY = "대표님의_SUPABASE_ANON_KEY_입력"; 
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI"; 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export async function GET() {
