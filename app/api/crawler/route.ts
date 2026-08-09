@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
+import { addAbortListener } from 'events';
 
 const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 // 🚨 아래 꼭 대표님의 진짜 익명 키로 바꿔주세요!
@@ -31,13 +32,13 @@ export async function GET() {
         const fullLink = item.detailUrl;
 
         // 중복 방지 체크 후 삽입
-        if (!scrapedDeals.some(deal => deal.title === title)) {
+        if (!scrapedDeals.some(deal => deal.title === title)) { 
           scrapedDeals.push({
             title: title,
-            content: "링크를 클릭하여 상세 혜택을 확인하세요.", 
+            content: "링크를 클릭하여 상세 혜택을 확인하세요.",
             url: fullLink,
             category: "쇼핑",
-            sub_category: "네이버페이",
+            sub_category: "네이버페이", 
             author: "AutoBot", 
             mall_name: item.promotionName,
             status: "진행중",
