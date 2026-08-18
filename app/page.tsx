@@ -60,6 +60,9 @@ export default function Home() {
   const [myPageTab, setMyPageTab] = useState(0);
   const [selectedSub, setSelectedSub] = useState("전체");
   const [sortOption, setSortOption] = useState("최신순");
+  
+  // 💡 [신규] 현재 활성화된 탭 (인기글 vs 전체글) - 기본값을 '인기'로 설정
+  const [currentTab, setCurrentTab] = useState("인기");
 
   const [auth, setAuth] = useState({ loggedIn: false, userId: "", userRole: "guest" });
 
@@ -93,7 +96,6 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
 
-  // 💡 [완벽 복구본] DB 연동 및 정렬 오류 해결된 데이터 불러오기 함수
   const fetchTargetData = async () => {
     setIsLoading(true);
     try {
@@ -139,13 +141,17 @@ export default function Home() {
           query = query.or(`title.ilike.%${activeSearch}%,content.ilike.%${activeSearch}%`);
         }
 
-        // 💡 [복구] 추천순 정렬 DB 페이징 정상화
-        if (sortOption === "조회순") {
-          query = query.order('views', { ascending: false });
-        } else if (sortOption === "추천순") {
-          query = query.order('upvotes', { ascending: false });
+        // 💡 [수정됨] 인기 탭 분리 적용 (인기 탭이면 추천순 정렬 강제)
+        if (currentTab === "인기") {
+          query = query.order('upvotes', { ascending: false }).order('views', { ascending: false });
         } else {
-          query = query.order('id', { ascending: false });
+          if (sortOption === "조회순") {
+            query = query.order('views', { ascending: false });
+          } else if (sortOption === "추천순") {
+            query = query.order('upvotes', { ascending: false });
+          } else {
+            query = query.order('id', { ascending: false });
+          }
         }
 
         const from = (currentPage - 1) * 8;
@@ -201,7 +207,7 @@ export default function Home() {
             mallName: item.mall_name || "", 
             price: item.price || "", 
             shipping: item.shipping || "",
-            upvotes: item.upvotes || 0, // DB 원본 추천수 사용 (동기화됨)
+            upvotes: item.upvotes || 0, 
             upvotedBy: pActions.filter(a => a.action_type === 'upvote').map(a => a.user_id),
             scrappedBy: pActions.filter(a => a.action_type === 'scrap').map(a => a.user_id),
             reportedBy: pActions.filter(a => a.action_type === 'report').map(a => a.user_id),
@@ -238,8 +244,9 @@ export default function Home() {
   };
 
   useEffect(() => {
+    // 💡 currentTab이 바뀔 때마다 데이터를 새로 정렬해서 불러옵니다.
     fetchTargetData();
-  }, [currentView, selectedSub, sortOption, activeSearch, currentPage, focusPostId, auth.userId]);
+  }, [currentView, selectedSub, sortOption, activeSearch, currentPage, focusPostId, auth.userId, currentTab]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && !window.history.state) {
@@ -267,7 +274,6 @@ export default function Home() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // 💡 [완벽 복구본] 온도 배타적 선택 + 신고 누적 시 자동삭제 기능 탑재
   const togglePostAction = async (postId: number, actionType: string) => {
     if (!auth.loggedIn) return alert("로그인 필요");
     const dbId = postId < 10000 ? postId : postId - 10000;
@@ -422,7 +428,8 @@ export default function Home() {
   const [adminEditCat, setAdminEditCat] = useState("옷"); const [adminAddSubInput, setAdminAddSubInput] = useState(""); const [adminRenameTarget, setAdminRenameTarget] = useState("선택안함"); const [adminRenameInput, setAdminRenameInput] = useState(""); const [adminDelTarget, setAdminDelTarget] = useState("선택안함");
   
   const navigate = (view: string) => { 
-    setCurrentView(view); setFocusPostId(null); setActiveSearch(""); setSearchQuery(""); setSelectedSub("전체"); setCurrentPage(1); window.scrollTo(0,0); 
+    // 💡 [신규] 카테고리 진입 시 인기 탭(currentTab)을 기본으로 보여주도록 초기화
+    setCurrentView(view); setFocusPostId(null); setActiveSearch(""); setSearchQuery(""); setSelectedSub("전체"); setCurrentPage(1); setCurrentTab("인기"); window.scrollTo(0,0); 
     
     if (typeof window !== "undefined") {
       window.history.pushState({ view: view }, '', '/'); 
@@ -808,6 +815,22 @@ export default function Home() {
                   )}
                 </div>
 
+                {/* 💡 [신규] 카테고리 진입 시 기본으로 활성화되는 '인기글' 탭 UI */}
+                <div className="flex space-x-4 border-b border-slate-200 px-2">
+                  <button 
+                    onClick={() => { setCurrentTab("인기"); setCurrentPage(1); }} 
+                    className={`py-3 px-2 font-black text-[15px] border-b-[3px] transition-all -mb-[1px] ${currentTab === "인기" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                  >
+                    🔥 인기글
+                  </button>
+                  <button 
+                    onClick={() => { setCurrentTab("전체"); setCurrentPage(1); }} 
+                    className={`py-3 px-2 font-black text-[15px] border-b-[3px] transition-all -mb-[1px] ${currentTab === "전체" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                  >
+                    전체 (최신)
+                  </button>
+                </div>
+
                 <div className="flex justify-between items-center gap-2">
                   <div className="flex gap-1.5 overflow-x-auto whitespace-nowrap py-1 scrollbar-hide flex-1">
                     {subCategories[currentView]?.map((sub: string) => (
@@ -820,13 +843,17 @@ export default function Home() {
                       </button>
                     ))}
                   </div>
-                  <div className="flex-shrink-0">
-                    <select value={sortOption} onChange={(e) => { setSortOption(e.target.value); setCurrentPage(1); }} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none text-slate-600 shadow-sm cursor-pointer">
-                      <option value="최신순">최신순</option>
-                      <option value="조회순">조회순</option>
-                      <option value="추천순">추천순</option>
-                    </select>
-                  </div>
+                  
+                  {/* 전체 탭일 때만 기존의 '최신순/조회순/추천순' 정렬 필터 표시 */}
+                  {currentTab === "전체" && (
+                    <div className="flex-shrink-0">
+                      <select value={sortOption} onChange={(e) => { setSortOption(e.target.value); setCurrentPage(1); }} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none text-slate-600 shadow-sm cursor-pointer">
+                        <option value="최신순">최신순</option>
+                        <option value="조회순">조회순</option>
+                        <option value="추천순">추천순</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden py-2 px-2 md:px-4">
