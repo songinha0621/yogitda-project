@@ -8,12 +8,27 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// 🛠️ 날짜를 "2026년 8월 19일 (수)" 형태로 예쁘게 바꿔주는 마법의 함수
+const formatDateToKorean = (dateStr: string) => {
+  if (!dateStr || dateStr === "기간 미정") return dateStr;
+  const cleanStr = dateStr.replace(/\./g, '-').split('T')[0]; // ex: 2026.08.19 -> 2026-08-19
+  const dateObj = new Date(cleanStr);
+  if (isNaN(dateObj.getTime())) return dateStr;
+  
+  const year = dateObj.getFullYear();
+  const month = dateObj.getMonth() + 1;
+  const day = dateObj.getDate();
+  const week = ['일', '월', '화', '수', '목', '금', '토'][dateObj.getDay()];
+  
+  return `${year}년 ${month}월 ${day}일 (${week})`;
+};
+
 export async function GET() {
-  console.log("🤖 [최종 완성 봇] 4대 혜택(네이버+CU+카드+통신사) 가동 시작...");
+  console.log("🤖 [최종 완성 봇] 4대 혜택 가동 시작...");
   const scrapedDeals: any[] = [];  
 
   // ====================================================================
-  // 1. 네이버페이 혜택 수집
+  // 1. ⭐️ [업그레이드] 네이버페이 혜택 수집 (디테일 텍스트 & 날짜 추출)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
@@ -24,22 +39,43 @@ export async function GET() {
     if (naverData?.elements) {
       naverData.elements.forEach((item: any) => {
         const title = `[${item.promotionName}] ${item.exposeTitle}`;
+        
+        // 1) 조건 뽑아내기 (Npay QR 결제 시 등)
+        const condition = item.exposeCondition || item.conditionText || item.benefitCondition || "Npay 결제 시 (상세 내용 참조)";
+        
+        // 2) 날짜 텍스트 뽑아내고 한글로 예쁘게 변환
+        const rawStartDate = item.displayStartDate || item.startDate || "";
+        const rawEndDate = item.displayEndDate || item.endDate || "기간 미정";
+        
+        const startKor = formatDateToKorean(rawStartDate);
+        const endKor = formatDateToKorean(rawEndDate);
+        const periodText = rawStartDate ? `${startKor} ~ ${endKor}` : endKor;
+
+        // 3) 본문(Content)에 합치기
+        const detailContent = `📌 [조건]\n${condition}\n\n📅 [이벤트 기간]\n${periodText}\n\n💡 자세한 유의사항은 아래 버튼을 클릭하여 확인하세요.`;
+
+        // 4) DB 청소용 정확한 마감일(end_date) 규격화 (YYYY-MM-DD)
+        let cleanEndDate = "기간 미정";
+        if (rawEndDate !== "기간 미정") {
+          cleanEndDate = rawEndDate.replace(/\./g, '-').split('T')[0];
+        }
+
         if (!scrapedDeals.some(deal => deal.title === title)) {
           scrapedDeals.push({
             title: title,
-            content: "링크를 클릭하여 상세 혜택을 확인하세요.",
+            content: detailContent, // 👈 적용 완료!
             url: item.detailUrl || item.link || "https://pay.naver.com", 
             category: "쇼핑",
             sub_category: "네이버페이",
             author: "AutoBot",
             mall_name: item.promotionName,
             status: "진행중",
-            end_date: item.endDate || item.displayEndDate || "기간 미정",
+            end_date: cleanEndDate, // 👈 정확한 마감일 설정 완료!
           });
         }
       });
     }
-    console.log(`✅ 1. 네이버페이 추출 완료!`);
+    console.log(`✅ 1. 네이버페이(디테일 패치) 추출 완료!`);
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
@@ -123,22 +159,19 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 카드고릴라 크롤링 에러:", e.message); }
 
   // ====================================================================
-  // 4. ⭐️ [신규] 통신사 멤버십 (T멤버십 기반 혜택 우회 수집)
+  // 4. 통신사 멤버십 (SKT)
   // ====================================================================
   try {
-    // 통신사 혜택을 잘 정리해두는 이벤트 아카이브 사이트(위메프 등 프로모션) 우회 긁기
-    // (공식 T월드는 동적 보안이 걸릴 때가 많아, 공개된 제휴 안내 페이지 활용)
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
     const { data: telecomHtml } = await axios.get(TELECOM_URL, {
       headers: { 'user-agent': 'Mozilla/5.0' },
-      validateStatus: () => true, // 어떤 상태 코드든 에러를 뱉지 않게 안전장치
+      validateStatus: () => true, 
     });
     const $ = cheerio.load(telecomHtml);
 
-    // 이벤트 리스트에서 제목과 링크 추출 (SKT 웹사이트 구조 반영)
     $('.event_list_wrap ul li').each((index, element) => {
       const title = $(element).find('dt').text().trim();
-      const rawDate = $(element).find('.date').text().trim(); // 2026.08.01 ~ 2026.08.31
+      const rawDate = $(element).find('.date').text().trim(); 
       
       if (title) {
         let endDate = "기간 미정";
