@@ -7,9 +7,9 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// 🛡️ 마스터 위장 신분증 (모든 사이트 공통 적용)
-const htmlHeaders = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+// 🛡️ 최신 크롬(124버전)으로 업그레이드된 마스터 위장 신분증
+const stealthHeaders = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
   'Accept-Language': 'ko-KR,ko;q=0.9',
   'Sec-Fetch-Dest': 'document',
@@ -22,7 +22,6 @@ const formatDateToKorean = (dateStr: string) => {
   const cleanStr = dateStr.replace(/\./g, '-').split('T')[0]; 
   const dateObj = new Date(cleanStr);
   if (isNaN(dateObj.getTime())) return dateStr;
-  
   const year = dateObj.getFullYear();
   const month = dateObj.getMonth() + 1;
   const day = dateObj.getDate();
@@ -47,18 +46,34 @@ const parseSafeEndDate = (rawDateStr: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [음식 탭 장착 완료] 크롤러 가동 시작...");
+  console.log("🤖 [스마트 필터링 탑재] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
 
+  // 💡 [핵심 기술] DB에 있는 글 제목을 제일 먼저 싹 가져와서 기억해둡니다!
+  let existingTitles: string[] = [];
+  try {
+    const { data: existingDeals } = await supabase.from('deals').select('title');
+    existingTitles = existingDeals?.map(d => d.title) || [];
+  } catch(e) {
+    console.error("DB 로드 에러");
+  }
+
   // ====================================================================
-  // 1. 🟢 네이버페이 (쇼핑)
+  // 1. 🟢 네이버페이 (쇼핑) - 스마트 필터링 적용 (차단 방지)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
-    const { data: naverData } = await axios.get(NAVER_API_URL, { headers: htmlHeaders });
+    const { data: naverData } = await axios.get(NAVER_API_URL, { headers: stealthHeaders });
 
     if (naverData?.elements) {
-      const naverPromises = naverData.elements.map(async (item: any) => {
+      // 이미 DB에 있는 건 버리고, 완전 '새로운 혜택'만 골라냅니다.
+      const newNaverItems = naverData.elements.filter((item: any) => {
+        const title = `[${item.promotionName}] ${item.exposeTitle}`;
+        return !existingTitles.includes(title);
+      });
+
+      // 오직 '새로운 혜택'에 대해서만 상세 페이지를 찌릅니다. (과부하 0%)
+      const naverPromises = newNaverItems.map(async (item: any) => {
         let title = `[${item.promotionName}] ${item.exposeTitle}`;
         let condition = item.exposeCondition || item.conditionText || item.benefitCondition;
         let rawStartDate = item.displayStartDate || item.startDate || "";
@@ -70,7 +85,7 @@ export async function GET() {
           if (idMatch) {
             const detailId = idMatch[1];
             const detailApiUrl = `https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions/${detailId}`;
-            const { data: detailData } = await axios.get(detailApiUrl, { headers: htmlHeaders, timeout: 3000 });
+            const { data: detailData } = await axios.get(detailApiUrl, { headers: stealthHeaders, timeout: 3000 });
             
             const target = detailData?.promotion || detailData || {};
             if (target.benefitCondition || target.exposeCondition) condition = target.benefitCondition || target.exposeCondition;
@@ -95,24 +110,22 @@ export async function GET() {
       });
 
       const results = await Promise.all(naverPromises);
-      results.forEach(res => {
-        if (res && !scrapedDeals.some(deal => deal.title === res.title)) scrapedDeals.push(res);
-      });
+      results.forEach(res => { if (res) scrapedDeals.push(res); });
     }
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 🍔 맥도날드 (음식 탭) - 방어막 없음!
+  // 2. 🍔 맥도날드 (음식)
   // ====================================================================
   try {
     const MCD_URL = 'https://www.mcdonalds.co.kr/kor/promotion/list.do';
-    const { data: mcdHtml } = await axios.get(MCD_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const { data: mcdHtml } = await axios.get(MCD_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(mcdHtml);
 
     $('.promot_list ul li').each((index, element) => {
       const title = $(element).find('strong.tit').text().trim();
       const link = $(element).find('a').attr('href');
-      if (title) {
+      if (title && !existingTitles.includes(`[맥도날드] ${title}`)) {
         scrapedDeals.push({
           title: `[맥도날드] ${title}`, content: "맥도날드 공식 앱 또는 매장에서 혜택을 확인하세요.", 
           url: link ? `https://www.mcdonalds.co.kr${link}` : MCD_URL, 
@@ -123,18 +136,18 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 맥도날드 에러:", e.message); }
 
   // ====================================================================
-  // 3. 🥪 써브웨이 (음식 탭) - 방어막 없음!
+  // 3. 🥪 써브웨이 (음식)
   // ====================================================================
   try {
     const SUBWAY_URL = 'https://www.subway.co.kr/eventList';
-    const { data: subHtml } = await axios.get(SUBWAY_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const { data: subHtml } = await axios.get(SUBWAY_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(subHtml);
 
     $('.event_cont ul li').each((index, element) => {
       const title = $(element).find('.title').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
       const link = $(element).find('a').attr('href');
-      if (title) {
+      if (title && !existingTitles.includes(`[써브웨이] ${title}`)) {
         scrapedDeals.push({
           title: `[써브웨이] ${title}`, content: "써브웨이 이달의 행사 및 꿀조합을 확인하세요.", 
           url: link ? `https://www.subway.co.kr${link}` : SUBWAY_URL, 
@@ -145,18 +158,18 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 써브웨이 에러:", e.message); }
 
   // ====================================================================
-  // 4. 🍕 도미노피자 (음식 탭) - 방어막 없음!
+  // 4. 🍕 도미노피자 (음식)
   // ====================================================================
   try {
     const DOMINO_URL = 'https://web.dominos.co.kr/event/list?gubun=E0200';
-    const { data: domHtml } = await axios.get(DOMINO_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const { data: domHtml } = await axios.get(DOMINO_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(domHtml);
 
     $('#content .event-list ul li').each((index, element) => {
       const title = $(element).find('.tit').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
       const link = $(element).find('a').attr('href');
-      if (title) {
+      if (title && !existingTitles.includes(`[도미노피자] ${title}`)) {
         scrapedDeals.push({
           title: `[도미노피자] ${title}`, content: "방문포장 할인 및 이달의 프로모션을 확인하세요.", 
           url: link ? `https://web.dominos.co.kr${link}` : DOMINO_URL, 
@@ -171,13 +184,13 @@ export async function GET() {
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
-    const { data: telecomHtml } = await axios.get(TELECOM_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const { data: telecomHtml } = await axios.get(TELECOM_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(telecomHtml);
 
     $('.event_list_wrap ul li').each((index, element) => {
       const title = $(element).find('dt').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
-      if (title) {
+      if (title && !existingTitles.includes(`[T멤버십] ${title}`)) {
         scrapedDeals.push({
           title: `[T멤버십] ${title}`, content: "T멤버십 앱 또는 웹에서 상세 혜택을 확인하세요.", url: "https://sktmembership.co.kr", 
           category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중", end_date: parseSafeEndDate(rawDate), 
@@ -191,12 +204,12 @@ export async function GET() {
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
-    const { data: tripHtml } = await axios.get(TRIP_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const { data: tripHtml } = await axios.get(TRIP_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(tripHtml);
     $('a[href*="/sale/"]').each((index, element) => {
       const title = $(element).text().replace(/\s+/g, ' ').trim();
       const link = $(element).attr('href');
-      if (title && title.length > 5 && !scrapedDeals.some(deal => deal.title.includes(title))) {
+      if (title && title.length > 5 && !existingTitles.includes(`[트립닷컴] ${title}`)) {
         scrapedDeals.push({
           title: `[트립닷컴] ${title}`, content: "글로벌 특가 및 할인코드는 공식 프로모션 링크를 확인하세요.", 
           url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
@@ -208,12 +221,12 @@ export async function GET() {
 
   try {
     const HOTELS_URL = 'https://kr.hotels.com/hotel-deals/';
-    const { data: hotelsHtml } = await axios.get(HOTELS_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const { data: hotelsHtml } = await axios.get(HOTELS_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(hotelsHtml);
     $('h2, h3, .offer-card-title, .title').each((index, element) => {
       const title = $(element).text().trim();
       const parentLink = $(element).closest('a').attr('href');
-      if (title && (title.includes('할인') || title.includes('특가'))) {
+      if (title && (title.includes('할인') || title.includes('특가')) && !existingTitles.includes(`[호텔스닷컴] ${title}`)) {
         scrapedDeals.push({
           title: `[호텔스닷컴] ${title}`, content: "호텔스닷컴 전용 할인 및 멤버십 혜택을 확인하세요.", 
           url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
@@ -225,13 +238,13 @@ export async function GET() {
 
   try {
     const MRT_URL = 'https://www.myrealtrip.com/promotions';
-    const { data: mrtHtml } = await axios.get(MRT_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const { data: mrtHtml } = await axios.get(MRT_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(mrtHtml);
     $('.promotion-item, a[href*="/promotions/"]').each((index, element) => {
       const title = $(element).find('.title, h3, p').first().text().trim() || $(element).text().trim();
       const link = $(element).attr('href') || $(element).closest('a').attr('href');
       const rawDate = $(element).find('.date, .period').text().trim();
-      if (title && title.length > 5) {
+      if (title && title.length > 5 && !existingTitles.includes(`[마이리얼트립] ${title}`)) {
         scrapedDeals.push({
           title: `[마이리얼트립] ${title}`, content: "입장권, 투어, 렌터카 선착순 혜택을 확인하세요.", 
           url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
@@ -246,14 +259,10 @@ export async function GET() {
   // ====================================================================
   let newCount = 0;
   try {
-    const { data: existingDeals } = await supabase.from('deals').select('title');
-    const existingTitles = existingDeals?.map(d => d.title) || [];
-    
-    const finalDeals = scrapedDeals.filter(deal => !existingTitles.includes(deal.title));
-    
-    if (finalDeals.length > 0) {
-      await supabase.from('deals').insert(finalDeals);
-      newCount = finalDeals.length;
+    // 위에서 이미 기존 타이틀 필터링을 거쳤으므로, scrapedDeals는 100% 새 글입니다!
+    if (scrapedDeals.length > 0) {
+      await supabase.from('deals').insert(scrapedDeals);
+      newCount = scrapedDeals.length;
     }
   } catch(e: any) { console.error("🚨 DB 인서트 에러:", e.message); }
 
@@ -283,6 +292,7 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [음식 탭 장착 완료] 새로운 글 ${newCount}개 추가됨.`);
+  console.log(`🎉 [스마트 필터링 완료] 새로운 글 ${newCount}개 추가됨.`);
+  // 필터링되어 들어오기 때문에 total_scraped 숫자는 순수한 '새로운 혜택' 개수와 일치하게 됩니다!
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: scrapedDeals.length });
 }
