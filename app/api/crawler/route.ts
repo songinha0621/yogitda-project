@@ -7,7 +7,6 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// 🛡️ 최신 크롬(124버전)으로 업그레이드된 마스터 위장 신분증
 const stealthHeaders = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -46,11 +45,11 @@ const parseSafeEndDate = (rawDateStr: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [음식+스마트필터링 완벽판] 크롤러 가동 시작...");
+  console.log("🤖 [공식 사이트 전용 + 스마트 필터링] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
-  let totalScrapedCount = 0; // 발견한 총 혜택 개수 카운터
+  let totalScrapedCount = 0; 
 
-  // 💡 [핵심] DB에 있는 글을 미리 싹 가져와서 과부하를 막는 '스마트 필터링'
+  // 💡 기존 DB 로드 (과부하 방지)
   let existingTitles: string[] = [];
   try {
     const { data: existingDeals } = await supabase.from('deals').select('title');
@@ -58,14 +57,14 @@ export async function GET() {
   } catch(e) { console.error("DB 로드 에러"); }
 
   // ====================================================================
-  // 1. 🟢 네이버페이 (스마트 필터링 적용으로 차단 완벽 회피)
+  // 1. 🟢 네이버페이 (공식 API)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
     const { data: naverData } = await axios.get(NAVER_API_URL, { headers: stealthHeaders });
 
     if (naverData?.elements) {
-      totalScrapedCount += naverData.elements.length; // 발견한 개수 누적
+      totalScrapedCount += naverData.elements.length; 
       
       const newNaverItems = naverData.elements.filter((item: any) => {
         const title = `[${item.promotionName}] ${item.exposeTitle}`;
@@ -114,7 +113,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 🍔 맥도날드 
+  // 2. 🍔 맥도날드 (공식 사이트)
   // ====================================================================
   try {
     const MCD_URL = 'https://www.mcdonalds.co.kr/kor/promotion/list.do';
@@ -138,7 +137,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 맥도날드 에러:", e.message); }
 
   // ====================================================================
-  // 3. 🥪 써브웨이 
+  // 3. 🥪 써브웨이 (공식 사이트)
   // ====================================================================
   try {
     const SUBWAY_URL = 'https://www.subway.co.kr/eventList';
@@ -163,7 +162,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 써브웨이 에러:", e.message); }
 
   // ====================================================================
-  // 4. 🍕 도미노피자 
+  // 4. 🍕 도미노피자 (공식 사이트)
   // ====================================================================
   try {
     const DOMINO_URL = 'https://web.dominos.co.kr/event/list?gubun=E0200';
@@ -188,7 +187,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 도미노피자 에러:", e.message); }
 
   // ====================================================================
-  // 5. 📱 통신사 멤버십 (SKT)
+  // 5. 📱 통신사 멤버십 (SKT 공식 웹)
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
@@ -211,7 +210,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 통신사 에러:", e.message); }
 
   // ====================================================================
-  // 6, 7, 8. ✈️ 여행 탭 3대장 
+  // 6, 7, 8. ✈️ 글로벌 여행 3대장 (공식 사이트)
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
@@ -311,6 +310,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [음식+스마트필터링 완벽판] 새로운 글 ${newCount}개 추가됨. (총 ${totalScrapedCount}개 스캔완료)`);
+  console.log(`🎉 [공식 전용 완벽판] 새로운 글 ${newCount}개 추가됨. (총 ${totalScrapedCount}개 스캔완료)`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: totalScrapedCount });
 }
