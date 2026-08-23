@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// 🛡️ 네이버페이를 뚫어낸 '마스터 위장 신분증' (모든 사이트 공통 적용)
+// 🛡️ 마스터 위장 신분증 (모든 사이트 공통 적용)
 const htmlHeaders = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -47,11 +47,11 @@ const parseSafeEndDate = (rawDateStr: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [정면 돌파 마스터 버전] 크롤러 가동 시작...");
+  console.log("🤖 [음식 탭 장착 완료] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
 
   // ====================================================================
-  // 1. 🟢 네이버페이 (상세 API 정밀 타격)
+  // 1. 🟢 네이버페이 (쇼핑)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
@@ -102,50 +102,72 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 🏪 CU 편의점 (정면 HTML 돌파)
+  // 2. 🍔 맥도날드 (음식 탭) - 방어막 없음!
   // ====================================================================
   try {
-    const CU_URL = 'https://cu.bgfretail.com/brand_info/news_list.do?category=brand_info&depth2=5';
-    const { data: cuHtml } = await axios.get(CU_URL, { headers: htmlHeaders, validateStatus: () => true });
-    const $ = cheerio.load(cuHtml);
+    const MCD_URL = 'https://www.mcdonalds.co.kr/kor/promotion/list.do';
+    const { data: mcdHtml } = await axios.get(MCD_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const $ = cheerio.load(mcdHtml);
 
-    $('table.board_list tbody tr').each((index, element) => {
-      const isNotice = $(element).find('img[alt="공지"]').length > 0;
-      if (isNotice) return;
-      const title = $(element).find('td.title a').text().trim();
-      const rawDate = $(element).find('td').last().text().trim(); 
+    $('.promot_list ul li').each((index, element) => {
+      const title = $(element).find('strong.tit').text().trim();
+      const link = $(element).find('a').attr('href');
       if (title) {
         scrapedDeals.push({
-          title: `[CU편의점] ${title}`, content: "링크를 클릭하여 상세 혜택을 확인하세요.", url: CU_URL, 
-          category: "쇼핑", sub_category: "CU", author: "AutoBot", mall_name: "CU", status: "진행중", end_date: parseSafeEndDate(rawDate),
+          title: `[맥도날드] ${title}`, content: "맥도날드 공식 앱 또는 매장에서 혜택을 확인하세요.", 
+          url: link ? `https://www.mcdonalds.co.kr${link}` : MCD_URL, 
+          category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "맥도날드", status: "진행중", end_date: "기간 미정",
         });
       }
     });
-  } catch (e: any) { console.error("🚨 CU 크롤링 에러:", e.message); }
+  } catch (e: any) { console.error("🚨 맥도날드 에러:", e.message); }
 
   // ====================================================================
-  // 3. 💳 신용카드 혜택 (정면 HTML 돌파 - 가짜 주소 완전 제거됨!)
+  // 3. 🥪 써브웨이 (음식 탭) - 방어막 없음!
   // ====================================================================
   try {
-    const CARD_URL = 'https://www.cardgorilla.com/event';
-    const { data: cardHtml } = await axios.get(CARD_URL, { headers: htmlHeaders, validateStatus: () => true });
-    const $ = cheerio.load(cardHtml);
+    const SUBWAY_URL = 'https://www.subway.co.kr/eventList';
+    const { data: subHtml } = await axios.get(SUBWAY_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const $ = cheerio.load(subHtml);
 
-    $('.event_list li').each((index, element) => {
+    $('.event_cont ul li').each((index, element) => {
+      const title = $(element).find('.title').text().trim();
+      const rawDate = $(element).find('.date').text().trim(); 
+      const link = $(element).find('a').attr('href');
+      if (title) {
+        scrapedDeals.push({
+          title: `[써브웨이] ${title}`, content: "써브웨이 이달의 행사 및 꿀조합을 확인하세요.", 
+          url: link ? `https://www.subway.co.kr${link}` : SUBWAY_URL, 
+          category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "써브웨이", status: "진행중", end_date: parseSafeEndDate(rawDate),
+        });
+      }
+    });
+  } catch (e: any) { console.error("🚨 써브웨이 에러:", e.message); }
+
+  // ====================================================================
+  // 4. 🍕 도미노피자 (음식 탭) - 방어막 없음!
+  // ====================================================================
+  try {
+    const DOMINO_URL = 'https://web.dominos.co.kr/event/list?gubun=E0200';
+    const { data: domHtml } = await axios.get(DOMINO_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const $ = cheerio.load(domHtml);
+
+    $('#content .event-list ul li').each((index, element) => {
       const title = $(element).find('.tit').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
       const link = $(element).find('a').attr('href');
       if (title) {
         scrapedDeals.push({
-          title: `[카드혜택] ${title}`, content: "링크를 클릭하여 상세 혜택을 확인하세요.", url: link ? `https://www.cardgorilla.com${link}` : CARD_URL, 
-          category: "쇼핑", sub_category: "카드혜택", author: "AutoBot", mall_name: "카드고릴라", status: "진행중", end_date: parseSafeEndDate(rawDate),
+          title: `[도미노피자] ${title}`, content: "방문포장 할인 및 이달의 프로모션을 확인하세요.", 
+          url: link ? `https://web.dominos.co.kr${link}` : DOMINO_URL, 
+          category: "음식", sub_category: "피자치킨", author: "AutoBot", mall_name: "도미노피자", status: "진행중", end_date: parseSafeEndDate(rawDate),
         });
       }
     });
-  } catch (e: any) { console.error("🚨 카드고릴라 에러:", e.message); }
+  } catch (e: any) { console.error("🚨 도미노피자 에러:", e.message); }
 
   // ====================================================================
-  // 4. 📱 통신사 멤버십 (SKT)
+  // 5. 📱 통신사 멤버십 (SKT - 쇼핑 유지)
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
@@ -165,7 +187,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 통신사 에러:", e.message); }
 
   // ====================================================================
-  // 5, 6, 7. ✈️ 여행 탭 3대장 
+  // 6, 7, 8. ✈️ 여행 탭 3대장 (유지)
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
@@ -220,7 +242,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 마이리얼트립 에러:", e.message); }
 
   // ====================================================================
-  // 8. DB 저장 및 자동 청소 로직
+  // 9. DB 저장 및 자동 청소 로직
   // ====================================================================
   let newCount = 0;
   try {
@@ -261,6 +283,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [에러 완벽 제거 완료] 새로운 글 ${newCount}개 추가됨.`);
+  console.log(`🎉 [음식 탭 장착 완료] 새로운 글 ${newCount}개 추가됨.`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: scrapedDeals.length });
 }
