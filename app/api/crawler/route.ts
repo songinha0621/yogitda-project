@@ -7,15 +7,24 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const stealthHeaders = {
+// 🛡️ 1. 일반 웹페이지용 신분증 (네이버페이, SKT, 여행 탭 전용)
+const htmlHeaders = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  'Accept': 'application/json, text/html, application/xhtml+xml, */*;q=0.8',
-  'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-  'Cache-Control': 'no-cache',
-  'Pragma': 'no-cache',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept-Language': 'ko-KR,ko;q=0.9',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none'
+};
+
+// 🥷 2. 히든 API 타격용 해커 신분증 (CU, 카드고릴라 전용)
+const ajaxHeaders = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/javascript, */*; q=0.01',
+  'Accept-Language': 'ko-KR,ko;q=0.9',
   'Sec-Fetch-Dest': 'empty',
   'Sec-Fetch-Mode': 'cors',
-  'Sec-Fetch-Site': 'same-origin',
+  'Sec-Fetch-Site': 'same-origin'
 };
 
 const formatDateToKorean = (dateStr: string) => {
@@ -28,40 +37,35 @@ const formatDateToKorean = (dateStr: string) => {
   const month = dateObj.getMonth() + 1;
   const day = dateObj.getDate();
   const week = ['일', '월', '화', '수', '목', '금', '토'][dateObj.getDay()];
-  
   return `${year}년 ${month}월 ${day}일 (${week})`;
 };
 
 const parseSafeEndDate = (rawDateStr: string) => {
   if (!rawDateStr) return "기간 미정";
-  
   let endPart = rawDateStr;
   if (rawDateStr.includes('~')) endPart = rawDateStr.split('~')[1];
-
   const regexFull = /(20\d{2})[년./\-\s]+(\d{1,2})[월./\-\s]+(\d{1,2})[일\s]*/;
   let match = endPart.match(regexFull);
   if (match) return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-
   const regexShort = /(\d{1,2})[월./\-\s]+(\d{1,2})[일\s]*/;
   match = endPart.match(regexShort);
   if (match) {
     const currentYear = new Date().getFullYear();
     return `${currentYear}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
   }
-
   return "기간 미정";
 };
 
 export async function GET() {
-  console.log("🤖 [최종 진화 완전체] 크롤러 가동 시작...");
+  console.log("🤖 [쌍발 엔진 탑재] 무결점 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
 
   // ====================================================================
-  // 1. 🟢 네이버페이 (상세 API 2중 타격 병렬 처리 유지)
+  // 1. 🟢 네이버페이 (일반 신분증 사용 + 상세 API 병렬 타격)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
-    const { data: naverData } = await axios.get(NAVER_API_URL, { headers: stealthHeaders });
+    const { data: naverData } = await axios.get(NAVER_API_URL, { headers: htmlHeaders });
 
     if (naverData?.elements) {
       const naverPromises = naverData.elements.map(async (item: any) => {
@@ -76,14 +80,14 @@ export async function GET() {
           if (idMatch) {
             const detailId = idMatch[1];
             const detailApiUrl = `https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions/${detailId}`;
-            const { data: detailData } = await axios.get(detailApiUrl, { headers: stealthHeaders, timeout: 3000 });
+            const { data: detailData } = await axios.get(detailApiUrl, { headers: htmlHeaders, timeout: 3000 });
             
             const target = detailData?.promotion || detailData || {};
             if (target.benefitCondition || target.exposeCondition) condition = target.benefitCondition || target.exposeCondition;
             if (target.displayStartDate) rawStartDate = target.displayStartDate;
             if (target.displayEndDate) rawEndDate = target.displayEndDate;
           }
-        } catch (e: any) {}
+        } catch (e: any) { }
 
         condition = condition || "Npay 결제 시 (상세 내용 참조)";
         const startKor = formatDateToKorean(rawStartDate);
@@ -108,12 +112,17 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 🏪 CU 편의점 (⚡ 껍데기 우회 - 히든 AJAX POST 타격)
+  // 2. 🏪 CU 편의점 (해커 신분증 + AJAX POST 뚫기)
   // ====================================================================
   try {
     const CU_AJAX_URL = 'https://cu.bgfretail.com/brand_info/news_listAjax.do';
     const { data: cuHtml } = await axios.post(CU_AJAX_URL, "pageIndex=1", { 
-      headers: { ...stealthHeaders, 'Content-Type': 'application/x-www-form-urlencoded' } 
+      headers: { 
+        ...ajaxHeaders, 
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://cu.bgfretail.com',
+        'Referer': 'https://cu.bgfretail.com/brand_info/news_list.do?category=brand_info&depth2=5'
+      } 
     });
     const $ = cheerio.load(cuHtml);
 
@@ -132,13 +141,20 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 CU 크롤링 에러:", e.message); }
 
   // ====================================================================
-  // 3. 💳 신용카드 혜택 (⚡ 껍데기 우회 - 히든 JSON API 타격)
+  // 3. 💳 신용카드 혜택 (해커 신분증 + 히든 JSON 뚫기)
   // ====================================================================
   try {
     const CARD_API_URL = 'https://api.cardgorilla.com/v1/events?limit=30'; 
-    const { data: cardRes } = await axios.get(CARD_API_URL, { headers: stealthHeaders });
+    const { data: cardRes } = await axios.get(CARD_API_URL, { 
+      headers: {
+        ...ajaxHeaders,
+        'Origin': 'https://www.cardgorilla.com',
+        'Referer': 'https://www.cardgorilla.com/event'
+      }
+    });
     
-    const events = cardRes?.data || cardRes || [];
+    // 카드고릴라 API 데이터 구조 완벽 대응
+    const events = Array.isArray(cardRes) ? cardRes : (cardRes?.data || []);
     events.forEach((item: any) => {
       if (item.title) {
         const rawDate = `${item.startDate || ''} ~ ${item.endDate || ''}`;
@@ -152,11 +168,11 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 카드고릴라 에러:", e.message); }
 
   // ====================================================================
-  // 4. 📱 통신사 멤버십 (SKT - 기존 유지)
+  // 4. 📱 통신사 멤버십 (SKT - 일반 신분증 사용)
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
-    const { data: telecomHtml } = await axios.get(TELECOM_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const { data: telecomHtml } = await axios.get(TELECOM_URL, { headers: htmlHeaders, validateStatus: () => true });
     const $ = cheerio.load(telecomHtml);
 
     $('.event_list_wrap ul li').each((index, element) => {
@@ -172,11 +188,11 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 통신사 에러:", e.message); }
 
   // ====================================================================
-  // 5, 6, 7. ✈️ 여행 탭 3대장 (기존 유지)
+  // 5, 6, 7. ✈️ 여행 탭 3대장 (일반 신분증 사용)
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
-    const { data: tripHtml } = await axios.get(TRIP_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const { data: tripHtml } = await axios.get(TRIP_URL, { headers: htmlHeaders, validateStatus: () => true });
     const $ = cheerio.load(tripHtml);
     $('a[href*="/sale/"]').each((index, element) => {
       const title = $(element).text().replace(/\s+/g, ' ').trim();
@@ -193,7 +209,7 @@ export async function GET() {
 
   try {
     const HOTELS_URL = 'https://kr.hotels.com/hotel-deals/';
-    const { data: hotelsHtml } = await axios.get(HOTELS_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const { data: hotelsHtml } = await axios.get(HOTELS_URL, { headers: htmlHeaders, validateStatus: () => true });
     const $ = cheerio.load(hotelsHtml);
     $('h2, h3, .offer-card-title, .title').each((index, element) => {
       const title = $(element).text().trim();
@@ -210,7 +226,7 @@ export async function GET() {
 
   try {
     const MRT_URL = 'https://www.myrealtrip.com/promotions';
-    const { data: mrtHtml } = await axios.get(MRT_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const { data: mrtHtml } = await axios.get(MRT_URL, { headers: htmlHeaders, validateStatus: () => true });
     const $ = cheerio.load(mrtHtml);
     $('.promotion-item, a[href*="/promotions/"]').each((index, element) => {
       const title = $(element).find('.title, h3, p').first().text().trim() || $(element).text().trim();
@@ -259,11 +275,8 @@ export async function GET() {
         if (isNaN(endDate.getTime())) return;
         const diffDays = (now.getTime() - endDate.getTime()) / (1000 * 3600 * 24);
         
-        if (diffDays > 7) {
-          toDeleteIds.push(deal.id); 
-        } else if (diffDays > 0 && deal.status !== "종료") {
-          toUpdateIds.push(deal.id); 
-        }
+        if (diffDays > 7) toDeleteIds.push(deal.id); 
+        else if (diffDays > 0 && deal.status !== "종료") toUpdateIds.push(deal.id); 
       });
 
       if (toDeleteIds.length > 0) await supabase.from('deals').delete().in('id', toDeleteIds);
@@ -271,6 +284,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [최종 진화 완료] 새로운 글 ${newCount}개 추가됨.`);
+  console.log(`🎉 [완벽 우회 성공] 새로운 글 ${newCount}개 추가됨.`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: scrapedDeals.length });
 }
