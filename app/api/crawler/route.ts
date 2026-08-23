@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// 🛡️ 1. 일반 웹페이지용 신분증 (네이버페이, SKT, 여행 탭 전용)
+// 🛡️ 네이버페이를 완벽하게 뚫어낸 '마스터 위장 신분증' (모든 사이트에 공통 적용!)
 const htmlHeaders = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -15,16 +15,6 @@ const htmlHeaders = {
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
   'Sec-Fetch-Site': 'none'
-};
-
-// 🥷 2. 히든 API 타격용 해커 신분증 (CU, 카드고릴라 전용)
-const ajaxHeaders = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  'Accept': 'application/json, text/javascript, */*; q=0.01',
-  'Accept-Language': 'ko-KR,ko;q=0.9',
-  'Sec-Fetch-Dest': 'empty',
-  'Sec-Fetch-Mode': 'cors',
-  'Sec-Fetch-Site': 'same-origin'
 };
 
 const formatDateToKorean = (dateStr: string) => {
@@ -57,11 +47,11 @@ const parseSafeEndDate = (rawDateStr: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [쌍발 엔진 탑재] 무결점 크롤러 가동 시작...");
+  console.log("🤖 [정면 돌파 마스터 버전] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
 
   // ====================================================================
-  // 1. 🟢 네이버페이 (일반 신분증 사용 + 상세 API 병렬 타격)
+  // 1. 🟢 네이버페이 (성공 유지)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
@@ -112,18 +102,12 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 🏪 CU 편의점 (해커 신분증 + AJAX POST 뚫기)
+  // 2. 🏪 CU 편의점 (정면 돌파)
   // ====================================================================
   try {
-    const CU_AJAX_URL = 'https://cu.bgfretail.com/brand_info/news_listAjax.do';
-    const { data: cuHtml } = await axios.post(CU_AJAX_URL, "pageIndex=1", { 
-      headers: { 
-        ...ajaxHeaders, 
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': 'https://cu.bgfretail.com',
-        'Referer': 'https://cu.bgfretail.com/brand_info/news_list.do?category=brand_info&depth2=5'
-      } 
-    });
+    const CU_URL = 'https://cu.bgfretail.com/brand_info/news_list.do?category=brand_info&depth2=5';
+    // 에러나도 멈추지 않게 validateStatus 추가
+    const { data: cuHtml } = await axios.get(CU_URL, { headers: htmlHeaders, validateStatus: () => true });
     const $ = cheerio.load(cuHtml);
 
     $('table.board_list tbody tr').each((index, element) => {
@@ -133,7 +117,7 @@ export async function GET() {
       const rawDate = $(element).find('td').last().text().trim(); 
       if (title) {
         scrapedDeals.push({
-          title: `[CU편의점] ${title}`, content: "링크를 클릭하여 상세 혜택을 확인하세요.", url: "https://cu.bgfretail.com/brand_info/news_list.do?category=brand_info&depth2=5", 
+          title: `[CU편의점] ${title}`, content: "링크를 클릭하여 상세 혜택을 확인하세요.", url: CU_URL, 
           category: "쇼핑", sub_category: "CU", author: "AutoBot", mall_name: "CU", status: "진행중", end_date: parseSafeEndDate(rawDate),
         });
       }
@@ -141,26 +125,20 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 CU 크롤링 에러:", e.message); }
 
   // ====================================================================
-  // 3. 💳 신용카드 혜택 (해커 신분증 + 히든 JSON 뚫기)
+  // 3. 💳 신용카드 혜택 (정면 돌파)
   // ====================================================================
   try {
-    const CARD_API_URL = 'https://api.cardgorilla.com/v1/events?limit=30'; 
-    const { data: cardRes } = await axios.get(CARD_API_URL, { 
-      headers: {
-        ...ajaxHeaders,
-        'Origin': 'https://www.cardgorilla.com',
-        'Referer': 'https://www.cardgorilla.com/event'
-      }
-    });
-    
-    // 카드고릴라 API 데이터 구조 완벽 대응
-    const events = Array.isArray(cardRes) ? cardRes : (cardRes?.data || []);
-    events.forEach((item: any) => {
-      if (item.title) {
-        const rawDate = `${item.startDate || ''} ~ ${item.endDate || ''}`;
-        const link = `https://www.cardgorilla.com/event/detail/${item.id}`;
+    const CARD_URL = 'https://www.cardgorilla.com/event';
+    const { data: cardHtml } = await axios.get(CARD_URL, { headers: htmlHeaders, validateStatus: () => true });
+    const $ = cheerio.load(cardHtml);
+
+    $('.event_list li').each((index, element) => {
+      const title = $(element).find('.tit').text().trim();
+      const rawDate = $(element).find('.date').text().trim(); 
+      const link = $(element).find('a').attr('href');
+      if (title) {
         scrapedDeals.push({
-          title: `[카드혜택] ${item.title}`, content: "링크를 클릭하여 상세 혜택을 확인하세요.", url: link, 
+          title: `[카드혜택] ${title}`, content: "링크를 클릭하여 상세 혜택을 확인하세요.", url: link ? `https://www.cardgorilla.com${link}` : CARD_URL, 
           category: "쇼핑", sub_category: "카드혜택", author: "AutoBot", mall_name: "카드고릴라", status: "진행중", end_date: parseSafeEndDate(rawDate),
         });
       }
@@ -168,7 +146,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 카드고릴라 에러:", e.message); }
 
   // ====================================================================
-  // 4. 📱 통신사 멤버십 (SKT - 일반 신분증 사용)
+  // 4. 📱 통신사 멤버십 (정면 돌파)
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
@@ -188,7 +166,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 통신사 에러:", e.message); }
 
   // ====================================================================
-  // 5, 6, 7. ✈️ 여행 탭 3대장 (일반 신분증 사용)
+  // 5, 6, 7. ✈️ 여행 탭 3대장 (정면 돌파)
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
@@ -284,6 +262,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [완벽 우회 성공] 새로운 글 ${newCount}개 추가됨.`);
+  console.log(`🎉 [정면 돌파 완료] 새로운 글 ${newCount}개 추가됨.`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: scrapedDeals.length });
 }
