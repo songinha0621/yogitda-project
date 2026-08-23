@@ -46,33 +46,32 @@ const parseSafeEndDate = (rawDateStr: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [스마트 필터링 탑재] 크롤러 가동 시작...");
+  console.log("🤖 [음식+스마트필터링 완벽판] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
+  let totalScrapedCount = 0; // 발견한 총 혜택 개수 카운터
 
-  // 💡 [핵심 기술] DB에 있는 글 제목을 제일 먼저 싹 가져와서 기억해둡니다!
+  // 💡 [핵심] DB에 있는 글을 미리 싹 가져와서 과부하를 막는 '스마트 필터링'
   let existingTitles: string[] = [];
   try {
     const { data: existingDeals } = await supabase.from('deals').select('title');
     existingTitles = existingDeals?.map(d => d.title) || [];
-  } catch(e) {
-    console.error("DB 로드 에러");
-  }
+  } catch(e) { console.error("DB 로드 에러"); }
 
   // ====================================================================
-  // 1. 🟢 네이버페이 (쇼핑) - 스마트 필터링 적용 (차단 방지)
+  // 1. 🟢 네이버페이 (스마트 필터링 적용으로 차단 완벽 회피)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
     const { data: naverData } = await axios.get(NAVER_API_URL, { headers: stealthHeaders });
 
     if (naverData?.elements) {
-      // 이미 DB에 있는 건 버리고, 완전 '새로운 혜택'만 골라냅니다.
+      totalScrapedCount += naverData.elements.length; // 발견한 개수 누적
+      
       const newNaverItems = naverData.elements.filter((item: any) => {
         const title = `[${item.promotionName}] ${item.exposeTitle}`;
         return !existingTitles.includes(title);
       });
 
-      // 오직 '새로운 혜택'에 대해서만 상세 페이지를 찌릅니다. (과부하 0%)
       const naverPromises = newNaverItems.map(async (item: any) => {
         let title = `[${item.promotionName}] ${item.exposeTitle}`;
         let condition = item.exposeCondition || item.conditionText || item.benefitCondition;
@@ -115,7 +114,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 🍔 맥도날드 (음식)
+  // 2. 🍔 맥도날드 
   // ====================================================================
   try {
     const MCD_URL = 'https://www.mcdonalds.co.kr/kor/promotion/list.do';
@@ -125,18 +124,21 @@ export async function GET() {
     $('.promot_list ul li').each((index, element) => {
       const title = $(element).find('strong.tit').text().trim();
       const link = $(element).find('a').attr('href');
-      if (title && !existingTitles.includes(`[맥도날드] ${title}`)) {
-        scrapedDeals.push({
-          title: `[맥도날드] ${title}`, content: "맥도날드 공식 앱 또는 매장에서 혜택을 확인하세요.", 
-          url: link ? `https://www.mcdonalds.co.kr${link}` : MCD_URL, 
-          category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "맥도날드", status: "진행중", end_date: "기간 미정",
-        });
+      if (title) {
+        totalScrapedCount++;
+        if (!existingTitles.includes(`[맥도날드] ${title}`)) {
+          scrapedDeals.push({
+            title: `[맥도날드] ${title}`, content: "맥도날드 공식 앱 또는 매장에서 혜택을 확인하세요.", 
+            url: link ? `https://www.mcdonalds.co.kr${link}` : MCD_URL, 
+            category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "맥도날드", status: "진행중", end_date: "기간 미정",
+          });
+        }
       }
     });
   } catch (e: any) { console.error("🚨 맥도날드 에러:", e.message); }
 
   // ====================================================================
-  // 3. 🥪 써브웨이 (음식)
+  // 3. 🥪 써브웨이 
   // ====================================================================
   try {
     const SUBWAY_URL = 'https://www.subway.co.kr/eventList';
@@ -147,18 +149,21 @@ export async function GET() {
       const title = $(element).find('.title').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
       const link = $(element).find('a').attr('href');
-      if (title && !existingTitles.includes(`[써브웨이] ${title}`)) {
-        scrapedDeals.push({
-          title: `[써브웨이] ${title}`, content: "써브웨이 이달의 행사 및 꿀조합을 확인하세요.", 
-          url: link ? `https://www.subway.co.kr${link}` : SUBWAY_URL, 
-          category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "써브웨이", status: "진행중", end_date: parseSafeEndDate(rawDate),
-        });
+      if (title) {
+        totalScrapedCount++;
+        if (!existingTitles.includes(`[써브웨이] ${title}`)) {
+          scrapedDeals.push({
+            title: `[써브웨이] ${title}`, content: "써브웨이 이달의 행사 및 꿀조합을 확인하세요.", 
+            url: link ? `https://www.subway.co.kr${link}` : SUBWAY_URL, 
+            category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "써브웨이", status: "진행중", end_date: parseSafeEndDate(rawDate),
+          });
+        }
       }
     });
   } catch (e: any) { console.error("🚨 써브웨이 에러:", e.message); }
 
   // ====================================================================
-  // 4. 🍕 도미노피자 (음식)
+  // 4. 🍕 도미노피자 
   // ====================================================================
   try {
     const DOMINO_URL = 'https://web.dominos.co.kr/event/list?gubun=E0200';
@@ -169,18 +174,21 @@ export async function GET() {
       const title = $(element).find('.tit').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
       const link = $(element).find('a').attr('href');
-      if (title && !existingTitles.includes(`[도미노피자] ${title}`)) {
-        scrapedDeals.push({
-          title: `[도미노피자] ${title}`, content: "방문포장 할인 및 이달의 프로모션을 확인하세요.", 
-          url: link ? `https://web.dominos.co.kr${link}` : DOMINO_URL, 
-          category: "음식", sub_category: "피자치킨", author: "AutoBot", mall_name: "도미노피자", status: "진행중", end_date: parseSafeEndDate(rawDate),
-        });
+      if (title) {
+        totalScrapedCount++;
+        if (!existingTitles.includes(`[도미노피자] ${title}`)) {
+          scrapedDeals.push({
+            title: `[도미노피자] ${title}`, content: "방문포장 할인 및 이달의 프로모션을 확인하세요.", 
+            url: link ? `https://web.dominos.co.kr${link}` : DOMINO_URL, 
+            category: "음식", sub_category: "피자치킨", author: "AutoBot", mall_name: "도미노피자", status: "진행중", end_date: parseSafeEndDate(rawDate),
+          });
+        }
       }
     });
   } catch (e: any) { console.error("🚨 도미노피자 에러:", e.message); }
 
   // ====================================================================
-  // 5. 📱 통신사 멤버십 (SKT - 쇼핑 유지)
+  // 5. 📱 통신사 멤버십 (SKT)
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
@@ -190,17 +198,20 @@ export async function GET() {
     $('.event_list_wrap ul li').each((index, element) => {
       const title = $(element).find('dt').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
-      if (title && !existingTitles.includes(`[T멤버십] ${title}`)) {
-        scrapedDeals.push({
-          title: `[T멤버십] ${title}`, content: "T멤버십 앱 또는 웹에서 상세 혜택을 확인하세요.", url: "https://sktmembership.co.kr", 
-          category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중", end_date: parseSafeEndDate(rawDate), 
-        });
+      if (title) {
+        totalScrapedCount++;
+        if (!existingTitles.includes(`[T멤버십] ${title}`)) {
+          scrapedDeals.push({
+            title: `[T멤버십] ${title}`, content: "T멤버십 앱 또는 웹에서 상세 혜택을 확인하세요.", url: "https://sktmembership.co.kr", 
+            category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중", end_date: parseSafeEndDate(rawDate), 
+          });
+        }
       }
     });
   } catch (e: any) { console.error("🚨 통신사 에러:", e.message); }
 
   // ====================================================================
-  // 6, 7, 8. ✈️ 여행 탭 3대장 (유지)
+  // 6, 7, 8. ✈️ 여행 탭 3대장 
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
@@ -209,12 +220,15 @@ export async function GET() {
     $('a[href*="/sale/"]').each((index, element) => {
       const title = $(element).text().replace(/\s+/g, ' ').trim();
       const link = $(element).attr('href');
-      if (title && title.length > 5 && !existingTitles.includes(`[트립닷컴] ${title}`)) {
-        scrapedDeals.push({
-          title: `[트립닷컴] ${title}`, content: "글로벌 특가 및 할인코드는 공식 프로모션 링크를 확인하세요.", 
-          url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
-          category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "트립닷컴", status: "진행중", end_date: "기간 미정",
-        });
+      if (title && title.length > 5) {
+        totalScrapedCount++;
+        if (!existingTitles.includes(`[트립닷컴] ${title}`)) {
+          scrapedDeals.push({
+            title: `[트립닷컴] ${title}`, content: "글로벌 특가 및 할인코드는 공식 프로모션 링크를 확인하세요.", 
+            url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
+            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "트립닷컴", status: "진행중", end_date: "기간 미정",
+          });
+        }
       }
     });
   } catch (e: any) { console.error("🚨 트립닷컴 에러:", e.message); }
@@ -226,12 +240,15 @@ export async function GET() {
     $('h2, h3, .offer-card-title, .title').each((index, element) => {
       const title = $(element).text().trim();
       const parentLink = $(element).closest('a').attr('href');
-      if (title && (title.includes('할인') || title.includes('특가')) && !existingTitles.includes(`[호텔스닷컴] ${title}`)) {
-        scrapedDeals.push({
-          title: `[호텔스닷컴] ${title}`, content: "호텔스닷컴 전용 할인 및 멤버십 혜택을 확인하세요.", 
-          url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
-          category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "호텔스닷컴", status: "진행중", end_date: "기간 미정",
-        });
+      if (title && (title.includes('할인') || title.includes('특가'))) {
+        totalScrapedCount++;
+        if (!existingTitles.includes(`[호텔스닷컴] ${title}`)) {
+          scrapedDeals.push({
+            title: `[호텔스닷컴] ${title}`, content: "호텔스닷컴 전용 할인 및 멤버십 혜택을 확인하세요.", 
+            url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
+            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "호텔스닷컴", status: "진행중", end_date: "기간 미정",
+          });
+        }
       }
     });
   } catch (e: any) { console.error("🚨 호텔스닷컴 에러:", e.message); }
@@ -244,12 +261,15 @@ export async function GET() {
       const title = $(element).find('.title, h3, p').first().text().trim() || $(element).text().trim();
       const link = $(element).attr('href') || $(element).closest('a').attr('href');
       const rawDate = $(element).find('.date, .period').text().trim();
-      if (title && title.length > 5 && !existingTitles.includes(`[마이리얼트립] ${title}`)) {
-        scrapedDeals.push({
-          title: `[마이리얼트립] ${title}`, content: "입장권, 투어, 렌터카 선착순 혜택을 확인하세요.", 
-          url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
-          category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", end_date: parseSafeEndDate(rawDate),
-        });
+      if (title && title.length > 5) {
+        totalScrapedCount++;
+        if (!existingTitles.includes(`[마이리얼트립] ${title}`)) {
+          scrapedDeals.push({
+            title: `[마이리얼트립] ${title}`, content: "입장권, 투어, 렌터카 선착순 혜택을 확인하세요.", 
+            url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
+            category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", end_date: parseSafeEndDate(rawDate),
+          });
+        }
       }
     });
   } catch (e: any) { console.error("🚨 마이리얼트립 에러:", e.message); }
@@ -259,7 +279,6 @@ export async function GET() {
   // ====================================================================
   let newCount = 0;
   try {
-    // 위에서 이미 기존 타이틀 필터링을 거쳤으므로, scrapedDeals는 100% 새 글입니다!
     if (scrapedDeals.length > 0) {
       await supabase.from('deals').insert(scrapedDeals);
       newCount = scrapedDeals.length;
@@ -292,7 +311,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [스마트 필터링 완료] 새로운 글 ${newCount}개 추가됨.`);
-  // 필터링되어 들어오기 때문에 total_scraped 숫자는 순수한 '새로운 혜택' 개수와 일치하게 됩니다!
-  return NextResponse.json({ success: true, new_count: newCount, total_scraped: scrapedDeals.length });
+  console.log(`🎉 [음식+스마트필터링 완벽판] 새로운 글 ${newCount}개 추가됨. (총 ${totalScrapedCount}개 스캔완료)`);
+  return NextResponse.json({ success: true, new_count: newCount, total_scraped: totalScrapedCount });
 }
