@@ -7,6 +7,22 @@ const SUPABASE_URL = "https://ntlxfdwpldcnsklmddzd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50bHhmZHdwbGRjbnNrbG1kZHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjkyNTEsImV4cCI6MjA5NjUwNTI1MX0.TDwHNCITp08CXHmxyvO2haDgPMNbAXetFDwViATuJkI";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const stealthHeaders = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache',
+  'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"Windows"',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1'
+};
+
 const formatDateToKorean = (dateStr: string) => {
   if (!dateStr || dateStr === "기간 미정") return dateStr;
   const cleanStr = dateStr.replace(/\./g, '-').split('T')[0]; 
@@ -42,23 +58,49 @@ const parseSafeEndDate = (rawDateStr: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [7기통 완전체] 쇼핑+여행 크롤러 가동 시작...");
+  console.log("🤖 [상세 API 병렬 타격 탑재] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
 
   // ====================================================================
-  // [쇼핑 탭] 1. 🟢 네이버페이
+  // 1. 🟢 네이버페이 (상세 API 2중 타격 & Promise.all 병렬 처리)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
-    const { data: naverData } = await axios.get(NAVER_API_URL, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    const { data: naverData } = await axios.get(NAVER_API_URL, { headers: stealthHeaders });
 
     if (naverData?.elements) {
-      naverData.elements.forEach((item: any) => {
-        const title = `[${item.promotionName}] ${item.exposeTitle}`;
-        const condition = item.exposeCondition || item.conditionText || item.benefitCondition || "Npay 결제 시 (상세 내용 참조)";
-        
-        const rawStartDate = item.displayStartDate || item.startDate || "";
-        const rawEndDate = item.displayEndDate || item.endDate || "기간 미정";
+      // ⚡ 40개를 순서대로 긁으면 느리니까 한 번에 출발시킴 (Promise.all)
+      const naverPromises = naverData.elements.map(async (item: any) => {
+        let title = `[${item.promotionName}] ${item.exposeTitle}`;
+        let condition = item.exposeCondition || item.conditionText || item.benefitCondition;
+        let rawStartDate = item.displayStartDate || item.startDate || "";
+        let rawEndDate = item.displayEndDate || item.endDate || "기간 미정";
+        const link = item.detailUrl || item.link || "https://pay.naver.com";
+
+        try {
+          // 1) 리스트 데이터의 링크에서 고유 ID 추출 (예: /detail/22873923427696)
+          const idMatch = link.match(/detail\/(\d+)/);
+          if (idMatch) {
+            const detailId = idMatch[1];
+            // 2) 숨겨진 '상세 전용 API' 주소 조합
+            const detailApiUrl = `https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions/${detailId}`;
+            
+            // 3) 상세 API 찌르기 (3초 내에 안 오면 쿨하게 포기하고 리스트 데이터만 씀)
+            const { data: detailData } = await axios.get(detailApiUrl, { headers: stealthHeaders, timeout: 3000 });
+            
+            // 4) 진짜 숨겨진 디테일 데이터가 있으면 덮어쓰기!
+            const target = detailData?.promotion || detailData || {};
+            if (target.benefitCondition || target.exposeCondition) {
+              condition = target.benefitCondition || target.exposeCondition;
+            }
+            if (target.displayStartDate) rawStartDate = target.displayStartDate;
+            if (target.displayEndDate) rawEndDate = target.displayEndDate;
+          }
+        } catch (e: any) { 
+          // 에러 나더라도 멈추지 않음 (리스트 기본 데이터 보존)
+        }
+
+        condition = condition || "Npay 결제 시 (상세 내용 참조)";
         const startKor = formatDateToKorean(rawStartDate);
         const endKor = formatDateToKorean(rawEndDate);
         const periodText = rawStartDate ? `${startKor} ~ ${endKor}` : endKor;
@@ -68,23 +110,28 @@ export async function GET() {
         let cleanEndDate = "기간 미정";
         if (rawEndDate !== "기간 미정") cleanEndDate = rawEndDate.replace(/\./g, '-').split('T')[0];
 
-        if (!scrapedDeals.some(deal => deal.title === title)) {
-          scrapedDeals.push({
-            title, content: detailContent, url: item.detailUrl || item.link || "https://pay.naver.com", 
-            category: "쇼핑", sub_category: "네이버페이", author: "AutoBot", mall_name: item.promotionName, status: "진행중",
-            end_date: cleanEndDate,
-          });
+        return {
+          title, content: detailContent, url: link, 
+          category: "쇼핑", sub_category: "네이버페이", author: "AutoBot", mall_name: item.promotionName, status: "진행중", end_date: cleanEndDate,
+        };
+      });
+
+      // ⚡ 병렬 처리된 결과를 한 방에 수거
+      const results = await Promise.all(naverPromises);
+      results.forEach(res => {
+        if (res && !scrapedDeals.some(deal => deal.title === res.title)) {
+          scrapedDeals.push(res);
         }
       });
     }
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // [쇼핑 탭] 2. 🏪 CU 편의점
+  // 2. 🏪 CU 편의점 (기존 유지)
   // ====================================================================
   try {
     const CU_URL = 'https://cu.bgfretail.com/brand_info/news_list.do?category=brand_info&depth2=5';
-    const { data: cuHtml } = await axios.get(CU_URL, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    const { data: cuHtml } = await axios.get(CU_URL, { headers: stealthHeaders });
     const $ = cheerio.load(cuHtml);
 
     $('table.board_list tbody tr').each((index, element) => {
@@ -92,70 +139,63 @@ export async function GET() {
       if (isNotice) return;
       const title = $(element).find('td.title a').text().trim();
       const rawDate = $(element).find('td').last().text().trim(); 
-      
       if (title) {
         scrapedDeals.push({
           title: `[CU편의점] ${title}`, content: "링크를 클릭하여 상세 혜택을 확인하세요.", url: CU_URL, 
-          category: "쇼핑", sub_category: "CU", author: "AutoBot", mall_name: "CU", status: "진행중",
-          end_date: parseSafeEndDate(rawDate),
+          category: "쇼핑", sub_category: "CU", author: "AutoBot", mall_name: "CU", status: "진행중", end_date: parseSafeEndDate(rawDate),
         });
       }
     });
   } catch (e: any) { console.error("🚨 CU 크롤링 에러:", e.message); }
 
   // ====================================================================
-  // [쇼핑 탭] 3. 💳 신용카드 혜택 (카드고릴라)
+  // 3. 💳 신용카드 혜택 (카드고릴라 - 기존 유지)
   // ====================================================================
   try {
     const CARD_URL = 'https://www.cardgorilla.com/event';
-    const { data: cardHtml } = await axios.get(CARD_URL, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    const { data: cardHtml } = await axios.get(CARD_URL, { headers: stealthHeaders });
     const $ = cheerio.load(cardHtml);
 
     $('.event_list li').each((index, element) => {
       const title = $(element).find('.tit').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
       const link = $(element).find('a').attr('href');
-
       if (title) {
         scrapedDeals.push({
           title: `[카드혜택] ${title}`, content: "링크를 클릭하여 상세 혜택을 확인하세요.", url: link ? `https://www.cardgorilla.com${link}` : CARD_URL, 
-          category: "쇼핑", sub_category: "카드혜택", author: "AutoBot", mall_name: "카드고릴라", status: "진행중",
-          end_date: parseSafeEndDate(rawDate),
+          category: "쇼핑", sub_category: "카드혜택", author: "AutoBot", mall_name: "카드고릴라", status: "진행중", end_date: parseSafeEndDate(rawDate),
         });
       }
     });
   } catch (e: any) { console.error("🚨 카드고릴라 에러:", e.message); }
 
   // ====================================================================
-  // [쇼핑 탭] 4. 📱 통신사 멤버십 (SKT)
+  // 4. 📱 통신사 멤버십 (SKT - 기존 유지)
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
-    const { data: telecomHtml } = await axios.get(TELECOM_URL, { headers: { 'user-agent': 'Mozilla/5.0' }, validateStatus: () => true });
+    const { data: telecomHtml } = await axios.get(TELECOM_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(telecomHtml);
 
     $('.event_list_wrap ul li').each((index, element) => {
       const title = $(element).find('dt').text().trim();
       const rawDate = $(element).find('.date').text().trim(); 
-      
       if (title) {
         scrapedDeals.push({
           title: `[T멤버십] ${title}`, content: "T멤버십 앱 또는 웹에서 상세 혜택을 확인하세요.", url: "https://sktmembership.co.kr", 
-          category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중",
-          end_date: parseSafeEndDate(rawDate), 
+          category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중", end_date: parseSafeEndDate(rawDate), 
         });
       }
     });
   } catch (e: any) { console.error("🚨 통신사 에러:", e.message); }
 
   // ====================================================================
-  // [여행 탭] 5. ✈️ 트립닷컴 (숙박/호텔)
+  // 5, 6, 7. ✈️ 여행 탭 3대장 (기존 유지)
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
-    const { data: tripHtml } = await axios.get(TRIP_URL, { headers: { 'user-agent': 'Mozilla/5.0' }, validateStatus: () => true });
+    const { data: tripHtml } = await axios.get(TRIP_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(tripHtml);
-
     $('a[href*="/sale/"]').each((index, element) => {
       const title = $(element).text().replace(/\s+/g, ' ').trim();
       const link = $(element).attr('href');
@@ -169,14 +209,10 @@ export async function GET() {
     });
   } catch (e: any) { console.error("🚨 트립닷컴 에러:", e.message); }
 
-  // ====================================================================
-  // [여행 탭] 6. 🏨 호텔스닷컴 (숙박/호텔)
-  // ====================================================================
   try {
     const HOTELS_URL = 'https://kr.hotels.com/hotel-deals/';
-    const { data: hotelsHtml } = await axios.get(HOTELS_URL, { headers: { 'user-agent': 'Mozilla/5.0' }, validateStatus: () => true });
+    const { data: hotelsHtml } = await axios.get(HOTELS_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(hotelsHtml);
-
     $('h2, h3, .offer-card-title, .title').each((index, element) => {
       const title = $(element).text().trim();
       const parentLink = $(element).closest('a').attr('href');
@@ -190,25 +226,19 @@ export async function GET() {
     });
   } catch (e: any) { console.error("🚨 호텔스닷컴 에러:", e.message); }
 
-  // ====================================================================
-  // [여행 탭] 7. 🎢 마이리얼트립 (액티비티/렌트)
-  // ====================================================================
   try {
     const MRT_URL = 'https://www.myrealtrip.com/promotions';
-    const { data: mrtHtml } = await axios.get(MRT_URL, { headers: { 'user-agent': 'Mozilla/5.0' }, validateStatus: () => true });
+    const { data: mrtHtml } = await axios.get(MRT_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(mrtHtml);
-
     $('.promotion-item, a[href*="/promotions/"]').each((index, element) => {
       const title = $(element).find('.title, h3, p').first().text().trim() || $(element).text().trim();
       const link = $(element).attr('href') || $(element).closest('a').attr('href');
       const rawDate = $(element).find('.date, .period').text().trim();
-
       if (title && title.length > 5) {
         scrapedDeals.push({
           title: `[마이리얼트립] ${title}`, content: "입장권, 투어, 렌터카 선착순 혜택을 확인하세요.", 
           url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
-          category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중",
-          end_date: parseSafeEndDate(rawDate),
+          category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", end_date: parseSafeEndDate(rawDate),
         });
       }
     });
@@ -245,7 +275,6 @@ export async function GET() {
         endDate.setHours(0, 0, 0, 0);
 
         if (isNaN(endDate.getTime())) return;
-
         const diffDays = (now.getTime() - endDate.getTime()) / (1000 * 3600 * 24);
         
         if (diffDays > 7) {
@@ -260,6 +289,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 크롤링 완료! 쇼핑+여행 합쳐서 새로운 글 ${newCount}개 추가됨.`);
+  console.log(`🎉 [상세API 타격완료] 새로운 글 ${newCount}개 추가됨.`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: scrapedDeals.length });
-} 
+}
