@@ -17,10 +17,10 @@ const stealthHeaders = {
 };
 
 const formatDateToKorean = (dateStr: string) => {
-  if (!dateStr || dateStr === "기간 미정") return dateStr;
+  if (!dateStr || dateStr === "기간 미정") return "기간 미정";
   const cleanStr = dateStr.replace(/\./g, '-').split('T')[0]; 
   const dateObj = new Date(cleanStr);
-  if (isNaN(dateObj.getTime())) return dateStr;
+  if (isNaN(dateObj.getTime())) return "기간 미정";
   const year = dateObj.getFullYear();
   const month = dateObj.getMonth() + 1;
   const day = dateObj.getDate();
@@ -28,8 +28,9 @@ const formatDateToKorean = (dateStr: string) => {
   return `${year}년 ${month}월 ${day}일 (${week})`;
 };
 
+// 💡 패치 1: DB(Date 타입)와 충돌나지 않도록 "기간 미정" 텍스트 대신 null을 반환합니다.
 const parseSafeEndDate = (rawDateStr: string) => {
-  if (!rawDateStr) return "기간 미정";
+  if (!rawDateStr || rawDateStr.includes('미정')) return null;
   let endPart = rawDateStr;
   if (rawDateStr.includes('~')) endPart = rawDateStr.split('~')[1];
   const regexFull = /(20\d{2})[년./\-\s]+(\d{1,2})[월./\-\s]+(\d{1,2})[일\s]*/;
@@ -41,11 +42,11 @@ const parseSafeEndDate = (rawDateStr: string) => {
     const currentYear = new Date().getFullYear();
     return `${currentYear}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
   }
-  return "기간 미정";
+  return null;
 };
 
 export async function GET() {
-  console.log("🤖 [버거킹 찐프로모션 정밀타격판] 크롤러 가동 시작...");
+  console.log("🤖 [날짜 자동입력 완벽 패치판] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
   let totalScrapedCount = 0; 
 
@@ -74,7 +75,7 @@ export async function GET() {
         let title = `[${item.promotionName}] ${item.exposeTitle}`;
         let condition = item.exposeCondition || item.conditionText || item.benefitCondition;
         let rawStartDate = item.displayStartDate || item.startDate || "";
-        let rawEndDate = item.displayEndDate || item.endDate || "기간 미정";
+        let rawEndDate = item.displayEndDate || item.endDate || "";
         const link = item.detailUrl || item.link || "https://pay.naver.com";
 
         try {
@@ -97,12 +98,17 @@ export async function GET() {
         const periodText = rawStartDate ? `${startKor} ~ ${endKor}` : endKor;
         const detailContent = `📌 [조건]\n${condition}\n\n📅 [이벤트 기간]\n${periodText}\n\n💡 자세한 유의사항은 혜택 받으러 가기 링크를 참조하세요.`;
 
-        let cleanEndDate = "기간 미정";
-        if (rawEndDate !== "기간 미정") cleanEndDate = rawEndDate.replace(/\./g, '-').split('T')[0];
+        // 💡 패치 2: 네이버페이도 날짜 규격을 검증하여 맞을 때만 넣고 아니면 null 처리
+        let dbEndDate = null;
+        if (rawEndDate && !rawEndDate.includes("미정")) {
+          const parsedDate = rawEndDate.replace(/\./g, '-').split('T')[0];
+          if (/^\d{4}-\d{2}-\d{2}$/.test(parsedDate)) dbEndDate = parsedDate;
+        }
 
         return {
           title, content: detailContent, url: link, 
-          category: "쇼핑", sub_category: "네이버페이", author: "AutoBot", mall_name: item.promotionName, status: "진행중", end_date: cleanEndDate,
+          category: "쇼핑", sub_category: "네이버페이", author: "AutoBot", mall_name: item.promotionName, status: "진행중", 
+          end_date: dbEndDate, // 여기서 100% 꽂힙니다!
         };
       });
 
@@ -112,7 +118,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 🍔 버거킹 (오직 '프로모션' 단어가 포함된 진짜 할인만 타격!)
+  // 2. 🍔 버거킹 ('프로모션' 단어 포함 & 상세 링크 타격)
   // ====================================================================
   try {
     const BK_EVENT_URL = 'https://www.burgerking.co.kr/#/event';
@@ -124,7 +130,6 @@ export async function GET() {
       const rawDate = $(element).find('.date').text().trim();
       const rawLink = $(element).find('a').attr('href');
       
-      // 💡 대표님 지시사항 적용: 제목에 '프로모션'이 들어간 글만 통과시킵니다.
       if (title && title.includes('프로모션')) {
         totalScrapedCount++;
         if (!existingTitles.includes(`[버거킹] ${title}`)) {
@@ -138,7 +143,8 @@ export async function GET() {
             title: `[버거킹] ${title}`, 
             content: "버거킹 공식 앱 또는 홈페이지에서 상세 혜택을 확인하세요.", 
             url: finalLink, 
-            category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "버거킹", status: "진행중", end_date: parseSafeEndDate(rawDate),
+            category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "버거킹", status: "진행중", 
+            end_date: parseSafeEndDate(rawDate), // 날짜 못 읽으면 안전하게 null 반환!
           });
         }
       }
@@ -161,7 +167,8 @@ export async function GET() {
         if (!existingTitles.includes(`[T멤버십] ${title}`)) {
           scrapedDeals.push({
             title: `[T멤버십] ${title}`, content: "T멤버십 앱 또는 웹에서 상세 혜택을 확인하세요.", url: "https://sktmembership.co.kr", 
-            category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중", end_date: parseSafeEndDate(rawDate), 
+            category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중", 
+            end_date: parseSafeEndDate(rawDate), 
           });
         }
       }
@@ -184,7 +191,8 @@ export async function GET() {
           scrapedDeals.push({
             title: `[트립닷컴] ${title}`, content: "글로벌 특가 및 할인코드는 공식 프로모션 링크를 확인하세요.", 
             url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
-            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "트립닷컴", status: "진행중", end_date: "기간 미정",
+            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "트립닷컴", status: "진행중", 
+            end_date: null, // 여행탭은 확실하게 null로 둡니다.
           });
         }
       }
@@ -204,7 +212,8 @@ export async function GET() {
           scrapedDeals.push({
             title: `[호텔스닷컴] ${title}`, content: "호텔스닷컴 전용 할인 및 멤버십 혜택을 확인하세요.", 
             url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
-            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "호텔스닷컴", status: "진행중", end_date: "기간 미정",
+            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "호텔스닷컴", status: "진행중", 
+            end_date: null, // 여행탭은 확실하게 null로 둡니다.
           });
         }
       }
@@ -225,7 +234,8 @@ export async function GET() {
           scrapedDeals.push({
             title: `[마이리얼트립] ${title}`, content: "입장권, 투어, 렌터카 선착순 혜택을 확인하세요.", 
             url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
-            category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", end_date: parseSafeEndDate(rawDate),
+            category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", 
+            end_date: parseSafeEndDate(rawDate),
           });
         }
       }
@@ -233,7 +243,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 마이리얼트립 에러:", e.message); }
 
   // ====================================================================
-  // 7. DB 저장 및 자동 청소 로직
+  // 7. DB 저장 및 자동 청소 로직 (null 처리 완벽 대응)
   // ====================================================================
   let newCount = 0;
   try {
@@ -253,7 +263,9 @@ export async function GET() {
       const toDeleteIds: number[] = [];
 
       allDeals.forEach((deal: any) => {
-        if (!deal.end_date || deal.end_date === "기간 미정") return;
+        // null 이거나 빈 값인 경우 안전하게 스킵
+        if (!deal.end_date) return;
+        
         const endDate = new Date(deal.end_date);
         endDate.setHours(0, 0, 0, 0);
 
@@ -269,6 +281,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [찐프로모션 정밀타격판] 새로운 글 ${newCount}개 추가됨. (총 ${totalScrapedCount}개 스캔완료)`);
+  console.log(`🎉 [날짜 DB충돌 완벽해결판] 새로운 글 ${newCount}개 추가됨.`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: totalScrapedCount });
 }
