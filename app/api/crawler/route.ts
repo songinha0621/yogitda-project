@@ -16,11 +16,17 @@ const stealthHeaders = {
   'Sec-Fetch-Site': 'none'
 };
 
+// 💡 패치 1: 네이버의 암호화된 외계어(유니코드)를 완벽한 한글로 복원하는 해독기!
+const unescapeUnicode = (str: string) => {
+  if (!str) return str;
+  return str.replace(/\\u([a-fA-F0-9]{4})/g, (g, m1) => String.fromCharCode(parseInt(m1, 16)));
+};
+
 const formatDateToKorean = (dateStr: string) => {
-  if (!dateStr || dateStr === "기간 미정") return "기간 미정";
-  const cleanStr = dateStr.replace(/\./g, '-').split('T')[0]; 
+  if (!dateStr || dateStr.includes("미정")) return "기간 미정";
+  const cleanStr = dateStr.replace(/\./g, '-').split('T')[0].split(' ')[0].trim(); 
   const dateObj = new Date(cleanStr);
-  if (isNaN(dateObj.getTime())) return "기간 미정";
+  if (isNaN(dateObj.getTime())) return dateStr; 
   const year = dateObj.getFullYear();
   const month = dateObj.getMonth() + 1;
   const day = dateObj.getDate();
@@ -28,16 +34,18 @@ const formatDateToKorean = (dateStr: string) => {
   return `${year}년 ${month}월 ${day}일 (${week})`;
 };
 
-// 💡 패치 1: DB(Date 타입)와 충돌나지 않도록 "기간 미정" 텍스트 대신 null을 반환합니다.
 const parseSafeEndDate = (rawDateStr: string) => {
   if (!rawDateStr || rawDateStr.includes('미정')) return null;
   let endPart = rawDateStr;
   if (rawDateStr.includes('~')) endPart = rawDateStr.split('~')[1];
-  const regexFull = /(20\d{2})[년./\-\s]+(\d{1,2})[월./\-\s]+(\d{1,2})[일\s]*/;
-  let match = endPart.match(regexFull);
+
+  const cleanStr = endPart.replace(/\./g, '-').split('T')[0].split(' ')[0].trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) return cleanStr;
+
+  let match = endPart.match(/(20\d{2})[년\-\s]+(\d{1,2})[월\-\s]+(\d{1,2})[일\s]*/);
   if (match) return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-  const regexShort = /(\d{1,2})[월./\-\s]+(\d{1,2})[일\s]*/;
-  match = endPart.match(regexShort);
+
+  match = endPart.match(/(\d{1,2})[월\-\s]+(\d{1,2})[일\s]*/);
   if (match) {
     const currentYear = new Date().getFullYear();
     return `${currentYear}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
@@ -46,7 +54,7 @@ const parseSafeEndDate = (rawDateStr: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [날짜 자동입력 완벽 패치판] 크롤러 가동 시작...");
+  console.log("🤖 [네이버 암호해독 완벽판] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
   let totalScrapedCount = 0; 
 
@@ -57,7 +65,7 @@ export async function GET() {
   } catch(e) { console.error("DB 로드 에러"); }
 
   // ====================================================================
-  // 1. 🟢 네이버페이 (공식 API)
+  // 1. 🟢 네이버페이 (유니코드 해독 + 쌍끌이 정밀 타격)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
@@ -73,42 +81,69 @@ export async function GET() {
 
       const naverPromises = newNaverItems.map(async (item: any) => {
         let title = `[${item.promotionName}] ${item.exposeTitle}`;
-        let condition = item.exposeCondition || item.conditionText || item.benefitCondition;
+        let condition = item.exposeCondition || item.conditionText || item.benefitCondition || "";
         let rawStartDate = item.displayStartDate || item.startDate || "";
         let rawEndDate = item.displayEndDate || item.endDate || "";
         const link = item.detailUrl || item.link || "https://pay.naver.com";
 
-        try {
-          const idMatch = link.match(/detail\/(\d+)/);
-          if (idMatch) {
-            const detailId = idMatch[1];
+        const idMatch = link.match(/detail\/(\d+)/);
+        if (idMatch) {
+          const detailId = idMatch[1];
+          let isApiSuccess = false;
+
+          // [전략 1] 가장 깔끔한 히든 API 찌르기
+          try {
             const detailApiUrl = `https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions/${detailId}`;
             const { data: detailData } = await axios.get(detailApiUrl, { headers: stealthHeaders, timeout: 3000 });
-            
             const target = detailData?.promotion || detailData || {};
-            if (target.benefitCondition || target.exposeCondition) condition = target.benefitCondition || target.exposeCondition;
+            
+            if (target.benefitCondition || target.exposeCondition) {
+              condition = target.benefitCondition || target.exposeCondition;
+              isApiSuccess = true;
+            }
             if (target.displayStartDate) rawStartDate = target.displayStartDate;
             if (target.displayEndDate) rawEndDate = target.displayEndDate;
-          }
-        } catch (e: any) { }
+          } catch (e: any) { }
 
+          // [전략 2] API가 막혔다면 HTML 암호문(JSON)을 통째로 뜯어서 해독하기!
+          if (!isApiSuccess) {
+            try {
+              const detailHtmlRes = await axios.get(link, { headers: stealthHeaders, timeout: 3000 });
+              const html = detailHtmlRes.data;
+
+              if (!condition) {
+                const bcMatch = html.match(/"benefitCondition"\s*:\s*"([^"]+)"/);
+                if (bcMatch) condition = unescapeUnicode(bcMatch[1]);
+                else {
+                  const ecMatch = html.match(/"exposeCondition"\s*:\s*"([^"]+)"/);
+                  if (ecMatch) condition = unescapeUnicode(ecMatch[1]);
+                }
+              }
+              if (!rawEndDate) {
+                const edMatch = html.match(/"displayEndDate"\s*:\s*"([^"]+)"/);
+                if (edMatch) rawEndDate = unescapeUnicode(edMatch[1]);
+              }
+              if (!rawStartDate) {
+                const sdMatch = html.match(/"displayStartDate"\s*:\s*"([^"]+)"/);
+                if (sdMatch) rawStartDate = unescapeUnicode(sdMatch[1]);
+              }
+            } catch (err: any) { }
+          }
+        }
+
+        // 그래도 비어있다면 최후의 기본값 세팅
         condition = condition || "Npay 결제 시 (상세 내용 참조)";
         const startKor = formatDateToKorean(rawStartDate);
         const endKor = formatDateToKorean(rawEndDate);
-        const periodText = rawStartDate ? `${startKor} ~ ${endKor}` : endKor;
+        const periodText = rawStartDate && rawEndDate ? `${startKor} ~ ${endKor}` : (rawEndDate || "기간 미정");
+        
         const detailContent = `📌 [조건]\n${condition}\n\n📅 [이벤트 기간]\n${periodText}\n\n💡 자세한 유의사항은 혜택 받으러 가기 링크를 참조하세요.`;
-
-        // 💡 패치 2: 네이버페이도 날짜 규격을 검증하여 맞을 때만 넣고 아니면 null 처리
-        let dbEndDate = null;
-        if (rawEndDate && !rawEndDate.includes("미정")) {
-          const parsedDate = rawEndDate.replace(/\./g, '-').split('T')[0];
-          if (/^\d{4}-\d{2}-\d{2}$/.test(parsedDate)) dbEndDate = parsedDate;
-        }
+        let dbEndDate = parseSafeEndDate(rawEndDate);
 
         return {
           title, content: detailContent, url: link, 
           category: "쇼핑", sub_category: "네이버페이", author: "AutoBot", mall_name: item.promotionName, status: "진행중", 
-          end_date: dbEndDate, // 여기서 100% 꽂힙니다!
+          end_date: dbEndDate, 
         };
       });
 
@@ -144,7 +179,7 @@ export async function GET() {
             content: "버거킹 공식 앱 또는 홈페이지에서 상세 혜택을 확인하세요.", 
             url: finalLink, 
             category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "버거킹", status: "진행중", 
-            end_date: parseSafeEndDate(rawDate), // 날짜 못 읽으면 안전하게 null 반환!
+            end_date: parseSafeEndDate(rawDate),
           });
         }
       }
@@ -191,8 +226,7 @@ export async function GET() {
           scrapedDeals.push({
             title: `[트립닷컴] ${title}`, content: "글로벌 특가 및 할인코드는 공식 프로모션 링크를 확인하세요.", 
             url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
-            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "트립닷컴", status: "진행중", 
-            end_date: null, // 여행탭은 확실하게 null로 둡니다.
+            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "트립닷컴", status: "진행중", end_date: null,
           });
         }
       }
@@ -212,8 +246,7 @@ export async function GET() {
           scrapedDeals.push({
             title: `[호텔스닷컴] ${title}`, content: "호텔스닷컴 전용 할인 및 멤버십 혜택을 확인하세요.", 
             url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
-            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "호텔스닷컴", status: "진행중", 
-            end_date: null, // 여행탭은 확실하게 null로 둡니다.
+            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "호텔스닷컴", status: "진행중", end_date: null,
           });
         }
       }
@@ -243,7 +276,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 마이리얼트립 에러:", e.message); }
 
   // ====================================================================
-  // 7. DB 저장 및 자동 청소 로직 (null 처리 완벽 대응)
+  // 7. DB 저장 및 자동 청소 로직
   // ====================================================================
   let newCount = 0;
   try {
@@ -263,9 +296,7 @@ export async function GET() {
       const toDeleteIds: number[] = [];
 
       allDeals.forEach((deal: any) => {
-        // null 이거나 빈 값인 경우 안전하게 스킵
         if (!deal.end_date) return;
-        
         const endDate = new Date(deal.end_date);
         endDate.setHours(0, 0, 0, 0);
 
@@ -281,6 +312,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [날짜 DB충돌 완벽해결판] 새로운 글 ${newCount}개 추가됨.`);
+  console.log(`🎉 [유니코드 해독 완료] 새로운 글 ${newCount}개 추가됨.`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: totalScrapedCount });
 }
