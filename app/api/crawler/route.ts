@@ -45,11 +45,10 @@ const parseSafeEndDate = (rawDateStr: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [공식 사이트 전용 + 스마트 필터링] 크롤러 가동 시작...");
+  console.log("🤖 [버거킹 찐프로모션 정밀타격판] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
   let totalScrapedCount = 0; 
 
-  // 💡 기존 DB 로드 (과부하 방지)
   let existingTitles: string[] = [];
   try {
     const { data: existingDeals } = await supabase.from('deals').select('title');
@@ -113,81 +112,41 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 🍔 맥도날드 (공식 사이트)
+  // 2. 🍔 버거킹 (오직 '프로모션' 단어가 포함된 진짜 할인만 타격!)
   // ====================================================================
   try {
-    const MCD_URL = 'https://www.mcdonalds.co.kr/kor/promotion/list.do';
-    const { data: mcdHtml } = await axios.get(MCD_URL, { headers: stealthHeaders, validateStatus: () => true });
-    const $ = cheerio.load(mcdHtml);
+    const BK_EVENT_URL = 'https://www.burgerking.co.kr/#/event';
+    const { data: bkHtml } = await axios.get(BK_EVENT_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const $ = cheerio.load(bkHtml);
 
-    $('.promot_list ul li').each((index, element) => {
-      const title = $(element).find('strong.tit').text().trim();
-      const link = $(element).find('a').attr('href');
-      if (title) {
+    $('.event_list li, .list_ev li').each((index, element) => {
+      const title = $(element).find('.tit, .txt').text().trim();
+      const rawDate = $(element).find('.date').text().trim();
+      const rawLink = $(element).find('a').attr('href');
+      
+      // 💡 대표님 지시사항 적용: 제목에 '프로모션'이 들어간 글만 통과시킵니다.
+      if (title && title.includes('프로모션')) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[맥도날드] ${title}`)) {
+        if (!existingTitles.includes(`[버거킹] ${title}`)) {
+          
+          let finalLink = BK_EVENT_URL;
+          if (rawLink && rawLink.includes('event/detail')) {
+            finalLink = rawLink.startsWith('http') ? rawLink : `https://www.burgerking.co.kr${rawLink.startsWith('/') ? '' : '/'}${rawLink}`;
+          }
+
           scrapedDeals.push({
-            title: `[맥도날드] ${title}`, content: "맥도날드 공식 앱 또는 매장에서 혜택을 확인하세요.", 
-            url: link ? `https://www.mcdonalds.co.kr${link}` : MCD_URL, 
-            category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "맥도날드", status: "진행중", end_date: "기간 미정",
+            title: `[버거킹] ${title}`, 
+            content: "버거킹 공식 앱 또는 홈페이지에서 상세 혜택을 확인하세요.", 
+            url: finalLink, 
+            category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "버거킹", status: "진행중", end_date: parseSafeEndDate(rawDate),
           });
         }
       }
     });
-  } catch (e: any) { console.error("🚨 맥도날드 에러:", e.message); }
+  } catch (e: any) { console.error("🚨 버거킹 에러:", e.message); }
 
   // ====================================================================
-  // 3. 🥪 써브웨이 (공식 사이트)
-  // ====================================================================
-  try {
-    const SUBWAY_URL = 'https://www.subway.co.kr/eventList';
-    const { data: subHtml } = await axios.get(SUBWAY_URL, { headers: stealthHeaders, validateStatus: () => true });
-    const $ = cheerio.load(subHtml);
-
-    $('.event_cont ul li').each((index, element) => {
-      const title = $(element).find('.title').text().trim();
-      const rawDate = $(element).find('.date').text().trim(); 
-      const link = $(element).find('a').attr('href');
-      if (title) {
-        totalScrapedCount++;
-        if (!existingTitles.includes(`[써브웨이] ${title}`)) {
-          scrapedDeals.push({
-            title: `[써브웨이] ${title}`, content: "써브웨이 이달의 행사 및 꿀조합을 확인하세요.", 
-            url: link ? `https://www.subway.co.kr${link}` : SUBWAY_URL, 
-            category: "음식", sub_category: "패스트푸드", author: "AutoBot", mall_name: "써브웨이", status: "진행중", end_date: parseSafeEndDate(rawDate),
-          });
-        }
-      }
-    });
-  } catch (e: any) { console.error("🚨 써브웨이 에러:", e.message); }
-
-  // ====================================================================
-  // 4. 🍕 도미노피자 (공식 사이트)
-  // ====================================================================
-  try {
-    const DOMINO_URL = 'https://web.dominos.co.kr/event/list?gubun=E0200';
-    const { data: domHtml } = await axios.get(DOMINO_URL, { headers: stealthHeaders, validateStatus: () => true });
-    const $ = cheerio.load(domHtml);
-
-    $('#content .event-list ul li').each((index, element) => {
-      const title = $(element).find('.tit').text().trim();
-      const rawDate = $(element).find('.date').text().trim(); 
-      const link = $(element).find('a').attr('href');
-      if (title) {
-        totalScrapedCount++;
-        if (!existingTitles.includes(`[도미노피자] ${title}`)) {
-          scrapedDeals.push({
-            title: `[도미노피자] ${title}`, content: "방문포장 할인 및 이달의 프로모션을 확인하세요.", 
-            url: link ? `https://web.dominos.co.kr${link}` : DOMINO_URL, 
-            category: "음식", sub_category: "피자치킨", author: "AutoBot", mall_name: "도미노피자", status: "진행중", end_date: parseSafeEndDate(rawDate),
-          });
-        }
-      }
-    });
-  } catch (e: any) { console.error("🚨 도미노피자 에러:", e.message); }
-
-  // ====================================================================
-  // 5. 📱 통신사 멤버십 (SKT 공식 웹)
+  // 3. 📱 통신사 멤버십 (SKT 공식 웹)
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
@@ -210,7 +169,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 통신사 에러:", e.message); }
 
   // ====================================================================
-  // 6, 7, 8. ✈️ 글로벌 여행 3대장 (공식 사이트)
+  // 4, 5, 6. ✈️ 글로벌 여행 3대장 (공식 사이트)
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
@@ -274,7 +233,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 마이리얼트립 에러:", e.message); }
 
   // ====================================================================
-  // 9. DB 저장 및 자동 청소 로직
+  // 7. DB 저장 및 자동 청소 로직
   // ====================================================================
   let newCount = 0;
   try {
@@ -310,6 +269,6 @@ export async function GET() {
     }
   } catch (e: any) { console.error("🚨 청소 에러:", e.message); }
 
-  console.log(`🎉 [공식 전용 완벽판] 새로운 글 ${newCount}개 추가됨. (총 ${totalScrapedCount}개 스캔완료)`);
+  console.log(`🎉 [찐프로모션 정밀타격판] 새로운 글 ${newCount}개 추가됨. (총 ${totalScrapedCount}개 스캔완료)`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: totalScrapedCount });
 }
