@@ -244,7 +244,6 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // 💡 currentTab이 바뀔 때마다 데이터를 새로 정렬해서 불러옵니다.
     fetchTargetData();
   }, [currentView, selectedSub, sortOption, activeSearch, currentPage, focusPostId, auth.userId, currentTab]);
 
@@ -428,7 +427,6 @@ export default function Home() {
   const [adminEditCat, setAdminEditCat] = useState("옷"); const [adminAddSubInput, setAdminAddSubInput] = useState(""); const [adminRenameTarget, setAdminRenameTarget] = useState("선택안함"); const [adminRenameInput, setAdminRenameInput] = useState(""); const [adminDelTarget, setAdminDelTarget] = useState("선택안함");
   
   const navigate = (view: string) => { 
-    // 💡 [신규] 카테고리 진입 시 인기 탭(currentTab)을 기본으로 보여주도록 초기화
     setCurrentView(view); setFocusPostId(null); setActiveSearch(""); setSearchQuery(""); setSelectedSub("전체"); setCurrentPage(1); setCurrentTab("인기"); window.scrollTo(0,0); 
     
     if (typeof window !== "undefined") {
@@ -741,9 +739,9 @@ export default function Home() {
                             <p className="text-[11px] text-slate-400 mt-2 font-semibold">{n.time}</p>
                           </div>
                         ))}
-                      </div>
-                    )}
-                  </>
+                    </div>
+                  )}
+                </>
                 )}
               </div>
             )}
@@ -844,7 +842,6 @@ export default function Home() {
                     ))}
                   </div>
                   
-                  {/* 전체 탭일 때만 기존의 '최신순/조회순/추천순' 정렬 필터 표시 */}
                   {currentTab === "전체" && (
                     <div className="flex-shrink-0">
                       <select value={sortOption} onChange={(e) => { setSortOption(e.target.value); setCurrentPage(1); }} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none text-slate-600 shadow-sm cursor-pointer">
@@ -868,14 +865,20 @@ export default function Home() {
                     if (currentView === "핫딜 커뮤니티" && p.price) titleStr += ` (${p.price})`;
                     
                     return (
-                      <div key={p.id} className="hover:bg-slate-50/80 transition-colors border-b border-slate-100 last:border-none rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      <div key={p.id} className="hover:bg-slate-50/85 transition-colors border-b border-slate-100 last:border-none rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <span className="inline-block text-[11px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg mr-2 mb-1.5">{p.subCategory || "일반"}</span>
                           <button onClick={()=>handleViewPost(p.id, p.category)} className="text-sm font-bold text-slate-800 hover:text-blue-600 block text-left truncate w-full">
                             {titleStr}{p.image || p.images?.length > 0 ? " 🖼️" : ""}
                           </button>
                         </div>
-                        <div className="flex items-center text-xs text-slate-400 font-semibold gap-3 shrink-0">
+                        <div className="flex items-center text-xs text-slate-400 font-semibold gap-3 shrink-0 flex-wrap">
+                          {/* 💡 [추가됨] 목록 화면에서 종료 날짜 표시 */}
+                          {p.endDate && (
+                            <span className="text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded-lg">
+                              ~ {p.endDate} 까지
+                            </span>
+                          )}
                           <button onClick={() => handleAuthorClick(p.author)} className="font-bold text-slate-600 hover:underline max-w-[90px] truncate">{getUserDisplayName(p.author)}</button>
                           <span>👀 {p.views}</span>
                           <span className={`font-bold ${currentView==="핫딜 커뮤니티"?"text-red-500":"text-blue-600"}`}>
@@ -924,6 +927,15 @@ export default function Home() {
                         {post.title}
                       </h1>
                     </div>
+
+                    {/* 💡 [추가됨] 상세 페이지 화면에서 눈에 띄는 종료 날짜 박스 표시 */}
+                    {post.endDate && (
+                      <div className="inline-block bg-red-50 border border-red-200 rounded-2xl px-4 py-2">
+                        <span className="text-red-600 font-bold text-xs">
+                          ⏰ 혜택 종료일: {post.endDate} 까지
+                        </span>
+                      </div>
+                    )}
                     
                     {isHot && post.mallName && (
                       <div className="grid grid-cols-3 gap-2 bg-slate-50 p-4 rounded-2xl text-center text-xs font-bold text-slate-600 border border-slate-100">
@@ -1433,134 +1445,133 @@ export default function Home() {
                           if(p.id >= 10000) await supabase.from('deals').delete().eq('id', p.id - 10000);
                         }
                       }} className="px-4 py-2 bg-red-600 text-white rounded-xl text-[11px] hover:bg-red-700 shadow-sm shrink-0">블라인드</button>
-                    </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
+              </div>
 
-                <div className="pt-8 border-t border-slate-100 space-y-4">
-                  <h3 className="font-black text-sm text-slate-800">🖼️ 메인 로비 배너 제어</h3>
-                  <div className="bg-slate-50 border border-slate-100 p-5 md:p-6 rounded-3xl space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">배너 이미지 파일 업로드 (직접 첨부)</label>
-                      <input type="file" accept="image/*" onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setBannerFile(file);
-                          const reader = new FileReader();
-                          reader.onloadend = () => setAdminBannerImg(reader.result as string);
-                          reader.readAsDataURL(file);
+              <div className="pt-8 border-t border-slate-100 space-y-4">
+                <h3 className="font-black text-sm text-slate-800">🖼️ 메인 로비 배너 제어</h3>
+                <div className="bg-slate-50 border border-slate-100 p-5 md:p-6 rounded-3xl space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">배너 이미지 파일 업로드 (직접 첨부)</label>
+                    <input type="file" accept="image/*" onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setBannerFile(file);
+                        const reader = new FileReader();
+                        reader.onloadend = () => setAdminBannerImg(reader.result as string);
+                        reader.readAsDataURL(file);
+                      }
+                    }} className="w-full p-3 bg-white border border-dashed border-slate-200 rounded-2xl text-xs cursor-pointer mb-3" />
+                    
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">또는 배너 이미지 URL 주소 (기존 방식)</label>
+                    <input type="text" placeholder="https://..." value={adminBannerImg.startsWith('data:image') ? "" : adminBannerImg} onChange={e=>{ setAdminBannerImg(e.target.value); setBannerFile(null); }} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">클릭 시 이동할 링크 URL</label>
+                    <input type="text" placeholder="https://..." value={adminBannerLink} onChange={e=>setAdminBannerLink(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
+                  </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
+                      <input type="checkbox" checked={adminBannerActive} onChange={e=>setAdminBannerActive(e.target.checked)} className="w-4 h-4 accent-slate-900" /> 메인 화면에 배너 노출
+                    </label>
+                    <button onClick={async ()=>{ 
+                      let finalUrl = adminBannerImg;
+                      if (bannerFile) {
+                        const fileExt = bannerFile.name.split('.').pop();
+                        const fileName = `banner_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+                        const { error: uploadError } = await supabase.storage.from('images').upload(fileName, bannerFile);
+                        if (!uploadError) {
+                          const { data } = supabase.storage.from('images').getPublicUrl(fileName);
+                          finalUrl = data.publicUrl;
+                          setAdminBannerImg(finalUrl);
+                        } else {
+                          alert("배너 이미지 업로드에 실패했습니다.");
+                          return;
                         }
-                      }} className="w-full p-3 bg-white border border-dashed border-slate-200 rounded-2xl text-xs cursor-pointer mb-3" />
+                      }
                       
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">또는 배너 이미지 URL 주소 (기존 방식)</label>
-                      <input type="text" placeholder="https://..." value={adminBannerImg.startsWith('data:image') ? "" : adminBannerImg} onChange={e=>{ setAdminBannerImg(e.target.value); setBannerFile(null); }} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">클릭 시 이동할 링크 URL</label>
-                      <input type="text" placeholder="https://..." value={adminBannerLink} onChange={e=>setAdminBannerLink(e.target.value)} className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none" />
-                    </div>
-                    <div className="flex items-center justify-between pt-2">
-                      <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
-                        <input type="checkbox" checked={adminBannerActive} onChange={e=>setAdminBannerActive(e.target.checked)} className="w-4 h-4 accent-slate-900" /> 메인 화면에 배너 노출
-                      </label>
-                      <button onClick={async ()=>{ 
-                        let finalUrl = adminBannerImg;
-                        if (bannerFile) {
-                          const fileExt = bannerFile.name.split('.').pop();
-                          const fileName = `banner_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-                          const { error: uploadError } = await supabase.storage.from('images').upload(fileName, bannerFile);
-                          if (!uploadError) {
-                            const { data } = supabase.storage.from('images').getPublicUrl(fileName);
-                            finalUrl = data.publicUrl;
-                            setAdminBannerImg(finalUrl);
-                          } else {
-                            alert("배너 이미지 업로드에 실패했습니다.");
-                            return;
-                          }
-                        }
-                        
-                        const newBanner = { imageUrl: finalUrl, targetLink: adminBannerLink, isActive: adminBannerActive };
-                        setMainBanner(newBanner); 
-                        await supabase.from('site_settings').update({ main_banner: newBanner }).eq('id', 1);
-                        
-                        setBannerFile(null);
-                        alert("로비 배너 교체 완료! (DB 저장 완료)"); 
-                      }} className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 shadow-sm">저장 및 적용</button>
-                    </div>
+                      const newBanner = { imageUrl: finalUrl, targetLink: adminBannerLink, isActive: adminBannerActive };
+                      setMainBanner(newBanner); 
+                      await supabase.from('site_settings').update({ main_banner: newBanner }).eq('id', 1);
+                      
+                      setBannerFile(null);
+                      alert("로비 배너 교체 완료! (DB 저장 완료)"); 
+                    }} className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 shadow-sm">저장 및 적용</button>
                   </div>
                 </div>
+              </div>
 
-                <div className="pt-8 border-t border-slate-100 space-y-4">
-                  <h3 className="font-black text-sm text-slate-800">📂 피드 카테고리(말머리) 제어</h3>
-                  <select value={adminEditCat} onChange={e=>setAdminEditCat(e.target.value)} className="w-full p-3.5 border border-slate-200 rounded-2xl text-sm font-bold bg-white focus:outline-none shadow-sm cursor-pointer">
-                    {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <div className="p-4 bg-blue-50/50 text-blue-800 rounded-2xl border border-blue-100 text-xs font-bold overflow-x-auto whitespace-nowrap scrollbar-hide shadow-sm flex items-center gap-2">
-                    <span className="bg-blue-600 text-white px-2 py-1 rounded-lg">현재 상태</span> {subCategories[adminEditCat]?.join("  →  ")}
+              <div className="pt-8 border-t border-slate-100 space-y-4">
+                <h3 className="font-black text-sm text-slate-800">📂 피드 카테고리(말머리) 제어</h3>
+                <select value={adminEditCat} onChange={e=>setAdminEditCat(e.target.value)} className="w-full p-3.5 border border-slate-200 rounded-2xl text-sm font-bold bg-white focus:outline-none shadow-sm cursor-pointer">
+                  {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+                <div className="p-4 bg-blue-50/50 text-blue-800 rounded-2xl border border-blue-100 text-xs font-bold overflow-x-auto whitespace-nowrap scrollbar-hide shadow-sm flex items-center gap-2">
+                  <span className="bg-blue-600 text-white px-2 py-1 rounded-lg">현재 상태</span> {subCategories[adminEditCat]?.join("  →  ")}
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                  <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+                    <b className="text-xs block text-slate-700">➕ 말머리 추가</b>
+                    <input type="text" value={adminAddSubInput} onChange={e=>setAdminAddSubInput(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="새로운 이름" />
+                    <button onClick={async ()=>{
+                      if(!adminAddSubInput) return; 
+                      if(subCategories[adminEditCat].includes(adminAddSubInput)) return alert("이미 존재합니다.");
+                      const newArr = [...subCategories[adminEditCat]]; const endIdx = newArr.indexOf("종료"); 
+                      if(endIdx !== -1) newArr.splice(endIdx, 0, adminAddSubInput); else newArr.push(adminAddSubInput);
+                      
+                      const newSubCats = {...subCategories, [adminEditCat]: newArr};
+                      setSubCategories(newSubCats); 
+                      await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
+                      
+                      setAdminAddSubInput(""); alert("추가 및 저장 완료!");
+                    }} className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-colors">추가 실행</button>
                   </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                    <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3">
-                      <b className="text-xs block text-slate-700">➕ 말머리 추가</b>
-                      <input type="text" value={adminAddSubInput} onChange={e=>setAdminAddSubInput(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="새로운 이름" />
-                      <button onClick={async ()=>{
-                        if(!adminAddSubInput) return; 
-                        if(subCategories[adminEditCat].includes(adminAddSubInput)) return alert("이미 존재합니다.");
-                        const newArr = [...subCategories[adminEditCat]]; const endIdx = newArr.indexOf("종료"); 
-                        if(endIdx !== -1) newArr.splice(endIdx, 0, adminAddSubInput); else newArr.push(adminAddSubInput);
-                        
-                        const newSubCats = {...subCategories, [adminEditCat]: newArr};
-                        setSubCategories(newSubCats); 
-                        await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
-                        
-                        setAdminAddSubInput(""); alert("추가 및 저장 완료!");
-                      }} className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-colors">추가 실행</button>
-                    </div>
 
-                    <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3">
-                      <b className="text-xs block text-slate-700">📝 말머리 변경</b>
-                      <select value={adminRenameTarget} onChange={e=>setAdminRenameTarget(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none cursor-pointer">
-                        <option value="선택안함">기존 대상 선택</option>
-                        {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
-                      </select>
-                      <input type="text" value={adminRenameInput} onChange={e=>setAdminRenameInput(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="바꿀 이름" />
-                      <button onClick={async ()=>{
-                        if(adminRenameTarget==="선택안함" || !adminRenameInput) return alert("입력 오류"); 
-                        if(subCategories[adminEditCat].includes(adminRenameInput)) return alert("중복 발생");
-                        
-                        const newSubCats = { ...subCategories, [adminEditCat]: subCategories[adminEditCat].map((s:any)=>s===adminRenameTarget ? adminRenameInput : s) };
-                        setSubCategories(newSubCats);
-                        await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
-                        
-                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminRenameTarget) ? {...p, subCategory: adminRenameInput} : p)); 
-                        alert("변경 및 저장 완료!");
-                      }} className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-colors">변경 실행</button>
-                    </div>
+                  <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+                    <b className="text-xs block text-slate-700">📝 말머리 변경</b>
+                    <select value={adminRenameTarget} onChange={e=>setAdminRenameTarget(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none cursor-pointer">
+                      <option value="선택안함">기존 대상 선택</option>
+                      {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <input type="text" value={adminRenameInput} onChange={e=>setAdminRenameInput(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none" placeholder="바꿀 이름" />
+                    <button onClick={async ()=>{
+                      if(adminRenameTarget==="선택안함" || !adminRenameInput) return alert("입력 오류"); 
+                      if(subCategories[adminEditCat].includes(adminRenameInput)) return alert("중복 발생");
+                      
+                      const newSubCats = { ...subCategories, [adminEditCat]: subCategories[adminEditCat].map((s:any)=>s===adminRenameTarget ? adminRenameInput : s) };
+                      setSubCategories(newSubCats);
+                      await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
+                      
+                      setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminRenameTarget) ? {...p, subCategory: adminRenameInput} : p)); 
+                      alert("변경 및 저장 완료!");
+                    }} className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-colors">변경 실행</button>
+                  </div>
 
-                    <div className="bg-white p-5 rounded-3xl border border-red-100 shadow-sm space-y-3">
-                      <b className="text-xs block text-red-600">🗑️ 말머리 삭제</b>
-                      <select value={adminDelTarget} onChange={e=>setAdminDelTarget(e.target.value)} className="w-full p-3 bg-red-50/30 border border-red-100 text-red-700 rounded-2xl text-xs focus:outline-none cursor-pointer">
-                        <option value="선택안함">삭제 대상 선택</option>
-                        {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
-                      </select>
-                      <div className="h-[42px]"></div>
-                      <button onClick={async ()=>{
-                        if(adminDelTarget==="선택안함") return alert("선택하세요");
-                        
-                        const newSubCats = { ...subCategories, [adminEditCat]: subCategories[adminEditCat].filter((s:any)=>s!==adminDelTarget) };
-                        setSubCategories(newSubCats);
-                        await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
-                        
-                        setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminDelTarget) ? {...p, subCategory: "일반"} : p)); 
-                        alert("삭제 및 저장 완료!");
-                      }} className="w-full py-3 bg-red-600 text-white rounded-2xl text-xs font-bold hover:bg-red-700 transition-colors">영구 삭제</button>
-                    </div>
+                  <div className="bg-white p-5 rounded-3xl border border-red-100 shadow-sm space-y-3">
+                    <b className="text-xs block text-red-600">🗑️ 말머리 삭제</b>
+                    <select value={adminDelTarget} onChange={e=>setAdminDelTarget(e.target.value)} className="w-full p-3 bg-red-50/30 border border-red-100 text-red-700 rounded-2xl text-xs focus:outline-none cursor-pointer">
+                      <option value="선택안함">삭제 대상 선택</option>
+                      {subCategories[adminEditCat]?.filter((s:any)=>s!=="전체"&&s!=="종료").map((s:any)=><option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <div className="h-[42px]"></div>
+                    <button onClick={async ()=>{
+                      if(adminDelTarget==="선택안함") return alert("선택하세요");
+                      
+                      const newSubCats = { ...subCategories, [adminEditCat]: subCategories[adminEditCat].filter((s:any)=>s!==adminDelTarget) };
+                      setSubCategories(newSubCats);
+                      await supabase.from('site_settings').update({ sub_categories: newSubCats }).eq('id', 1);
+                      
+                      setPosts((prev: any[]) => prev.map(p=>(p.category===adminEditCat && p.subCategory===adminDelTarget) ? {...p, subCategory: "일반"} : p)); 
+                      alert("삭제 및 저장 완료!");
+                    }} className="w-full py-3 bg-red-600 text-white rounded-2xl text-xs font-bold hover:bg-red-700 transition-colors">영구 삭제</button>
                   </div>
                 </div>
               </div>
             )}
-          </div> 
         </div> 
-    </>
+    </div> 
+  </>
   );
 }
