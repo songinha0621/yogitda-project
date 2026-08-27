@@ -14,20 +14,18 @@ const stealthHeaders = {
   'Cache-Control': 'no-cache'
 };
 
-// 💡 [초강력 날짜 추출기] 문장에 섞인 날짜를 무조건 YYYY-MM-DD로 뽑아내는 함수
+// 💡 [2순위] 문장에 섞인 날짜를 무조건 YYYY-MM-DD로 뽑아내는 함수
 const extractDate = (text: string) => {
   if (!text || text.includes('소진') || text.includes('미정')) return null;
-  const cleanText = text.replace(/\s+/g, ''); // 공백을 모두 제거 (예: 8 월 3 일 -> 8월3일)
+  const cleanText = text.replace(/\s+/g, ''); 
 
-  // 1. YYYY.MM.DD 형태 (예: 2026.08.31, 2026-08-31, 2026년08월31일)
   const regexFull = /(20\d{2})[.\-년/]+(0?[1-9]|1[0-2])[.\-월/]+(0?[1-9]|[12]\d|3[01])[일]*/g;
   const matchesFull = [...cleanText.matchAll(regexFull)];
   if (matchesFull.length > 0) {
-    const last = matchesFull[matchesFull.length - 1]; // 복수일 경우 뒤에 있는 종료일 선택
+    const last = matchesFull[matchesFull.length - 1]; 
     return `${last[1]}-${last[2].padStart(2, '0')}-${last[3].padStart(2, '0')}`;
   }
 
-  // 2. YY.MM.DD 형태 (예: 26.08.31)
   const regexShortYear = /(?<!20)(\d{2})[.\-년/]+(0?[1-9]|1[0-2])[.\-월/]+(0?[1-9]|[12]\d|3[01])[일]*/g;
   const matchesShortYear = [...cleanText.matchAll(regexShortYear)];
   if (matchesShortYear.length > 0) {
@@ -35,12 +33,11 @@ const extractDate = (text: string) => {
     return `20${last[1]}-${last[2].padStart(2, '0')}-${last[3].padStart(2, '0')}`;
   }
 
-  // 3. MM.DD 형태 (예: 08.31, 8/31, 8월31일)
   const regexNoYear = /(0?[1-9]|1[0-2])[.\-월/]+(0?[1-9]|[12]\d|3[01])[일]*/g;
   const matchesNoYear = [...cleanText.matchAll(regexNoYear)];
   if (matchesNoYear.length > 0) {
     const last = matchesNoYear[matchesNoYear.length - 1];
-    const currentYear = new Date().getFullYear(); // 연도가 생략된 경우 올해 년도 적용
+    const currentYear = new Date().getFullYear(); 
     return `${currentYear}-${last[1].padStart(2, '0')}-${last[2].padStart(2, '0')}`;
   }
 
@@ -48,9 +45,16 @@ const extractDate = (text: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [제목+날짜 올인] 타겟 크롤러 가동 시작...");
+  console.log("🤖 [기획의 정석] 제목/본문/날짜 분할 크롤러 가동...");
   const scrapedDeals: any[] = [];  
   let totalScrapedCount = 0; 
+  
+  // 💡 [3순위 핵심] 각 쇼핑몰(mall_name)별로 현재 살아있는 이벤트 제목들을 저장하는 명부
+  const liveTitlesByMall: Record<string, string[]> = {};
+  const addLiveTitle = (mall: string, title: string) => {
+    if (!liveTitlesByMall[mall]) liveTitlesByMall[mall] = [];
+    liveTitlesByMall[mall].push(title);
+  };
 
   let existingTitles: string[] = [];
   try {
@@ -61,7 +65,7 @@ export async function GET() {
   const genericContent = "💡 상세 내용은 혜택 받으러 가기 링크를 통해 확인하세요.";
 
   // ====================================================================
-  // 1. 네이버페이 (상세 내용 포기! 제목과 링크만 초고속 수집)
+  // 1. 네이버페이 (✨ 제목은 짧게, 조건은 본문에, 날짜는 D-day 역산!)
   // ====================================================================
   try {
     const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
@@ -69,39 +73,82 @@ export async function GET() {
 
     if (naverData?.elements) {
       totalScrapedCount += naverData.elements.length; 
-      const newNaverItems = naverData.elements.filter((item: any) => !existingTitles.includes(`[${item.promotionName}] ${item.exposeTitle}`));
-
-      newNaverItems.forEach((item: any) => {
+      
+      naverData.elements.forEach((item: any) => {
+        // 💡 1. 제목: 깔끔하게 이름만! (예: [뚜레쥬르] 클래식 롤케이크 증정)
         const title = `[${item.promotionName}] ${item.exposeTitle}`;
+        
+        // 💡 2. 본문 내용: 혜택 조건(예: 2만원 이상 결제 시)을 본문으로 밀어넣기
+        let conditionText = item.exposeCondition || item.benefitCondition || item.conditionText || "";
+        conditionText = conditionText.replace(/\n/g, ' ').trim();
+        const detailContent = conditionText ? `📌 [조건]\n${conditionText}\n\n${genericContent}` : genericContent;
+        
         const link = item.detailUrl || item.link || "https://pay.naver.com";
+        
+        addLiveTitle(item.promotionName, title); // 실시간 명부에 등록
 
-        scrapedDeals.push({
-          title, content: genericContent, url: link, 
-          category: "쇼핑", sub_category: "네이버페이", author: "AutoBot", mall_name: item.promotionName, status: "진행중", 
-          end_date: null, // 네이버는 날짜 수집 포기
-        });
+        if (!existingTitles.includes(title)) {
+          
+          // 💡 3. 날짜: D-Day 꼼수 및 명시적 날짜 역산 (상세페이지 접속 X)
+          let calculatedEndDate = null;
+          const rawJson = JSON.stringify(item);
+
+          // 3-1: 대놓고 주는 날짜 텍스트가 있는지 확인
+          const explicitDate = item.endDate || item.endDt || item.displayEndDate || item.endYmd;
+          if (explicitDate) {
+            calculatedEndDate = extractDate(String(explicitDate));
+          }
+
+          // 3-2: "D-3" 같은 문구를 발견하면 오늘 날짜 기준 +3일로 자동 계산
+          if (!calculatedEndDate) {
+            const dDayMatch = rawJson.match(/"D-(\d+)"/i) || rawJson.match(/"[a-zA-Z]*(?:dday|leftday|dayleft|remain)[a-zA-Z]*"\s*:\s*(\d+)/i);
+            if (dDayMatch) {
+              const daysLeft = parseInt(dDayMatch[1], 10);
+              const targetDate = new Date();
+              targetDate.setDate(targetDate.getDate() + daysLeft); 
+              calculatedEndDate = targetDate.toISOString().split('T')[0];
+            }
+          }
+
+          // 3-3: 그래도 없으면 JSON 전체에서 날짜 형태 숫자 찾아내기
+          if (!calculatedEndDate) {
+            const dateMatch = rawJson.match(/(202\d)[-./]?(0[1-9]|1[0-2])[-./]?(0[1-9]|[12]\d|3[01])/);
+            if (dateMatch) {
+              calculatedEndDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+            }
+          }
+
+          scrapedDeals.push({
+            title, content: detailContent, url: link, 
+            category: "쇼핑", sub_category: "네이버페이", author: "AutoBot", mall_name: item.promotionName, status: "진행중", 
+            end_date: calculatedEndDate, 
+          });
+        }
       });
     }
   } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
 
   // ====================================================================
-  // 2. 버거킹 (날짜 집중 타격)
+  // 2. 버거킹
   // ====================================================================
   try {
     const BK_EVENT_URL = 'https://www.burgerking.co.kr/#/event';
     const { data: bkHtml } = await axios.get(BK_EVENT_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(bkHtml);
     $('.event_list li, .list_ev li').each((index, element) => {
-      const title = $(element).find('.tit, .txt, strong').text().trim();
+      const rawTitle = $(element).find('.tit, .txt, strong').text().trim();
       const rawDateText = $(element).find('.date').text().trim() || $(element).text(); 
       const rawLink = $(element).find('a').attr('href');
       
-      if (title && title.includes('프로모션')) {
+      if (rawTitle && rawTitle.includes('프로모션')) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[버거킹] ${title}`)) {
+        const title = `[버거킹] ${rawTitle}`;
+        addLiveTitle("버거킹", title); 
+
+        if (!existingTitles.includes(title)) {
           let finalLink = rawLink && rawLink.includes('event/detail') ? (rawLink.startsWith('http') ? rawLink : `https://www.burgerking.co.kr${rawLink.startsWith('/') ? '' : '/'}${rawLink}`) : BK_EVENT_URL;
           scrapedDeals.push({
-            title: `[버거킹] ${title}`, content: genericContent, url: finalLink, 
+            title, content: genericContent, url: finalLink, 
             category: "음식", sub_category: "버거킹", author: "AutoBot", mall_name: "버거킹", status: "진행중", 
             end_date: extractDate(rawDateText),
           });
@@ -111,20 +158,23 @@ export async function GET() {
   } catch (e: any) {}
 
   // ====================================================================
-  // 3. 통신사 SKT (날짜 집중 타격)
+  // 3. 통신사 SKT 
   // ====================================================================
   try {
     const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
     const { data: telecomHtml } = await axios.get(TELECOM_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(telecomHtml);
     $('.event_list_wrap ul li').each((index, element) => {
-      const title = $(element).find('dt').text().trim();
+      const rawTitle = $(element).find('dt').text().trim();
       const rawDateText = $(element).find('.date').text().trim() || $(element).text(); 
-      if (title) {
+      if (rawTitle) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[T멤버십] ${title}`)) {
+        const title = `[T멤버십] ${rawTitle}`;
+        addLiveTitle("SKT", title);
+
+        if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title: `[T멤버십] ${title}`, content: genericContent, url: "https://sktmembership.co.kr", 
+            title, content: genericContent, url: "https://sktmembership.co.kr", 
             category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중", 
             end_date: extractDate(rawDateText), 
           });
@@ -134,7 +184,7 @@ export async function GET() {
   } catch (e: any) {}
 
   // ====================================================================
-  // 4. 여행 3사 (트립닷컴, 호텔스닷컴, 마이리얼트립)
+  // 4. 여행 3사 
   // ====================================================================
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
@@ -142,13 +192,15 @@ export async function GET() {
     const $ = cheerio.load(tripHtml);
     $('a[href*="/sale/"]').each((index, element) => {
       const rawText = $(element).text().replace(/\s+/g, ' ').trim();
-      const title = rawText; 
       const link = $(element).attr('href');
-      if (title && title.length > 5) {
+      if (rawText && rawText.length > 5) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[트립닷컴] ${title}`)) {
+        const title = `[트립닷컴] ${rawText}`;
+        addLiveTitle("트립닷컴", title);
+
+        if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
-            title: `[트립닷컴] ${title}`, content: genericContent, url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
+            title, content: genericContent, url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
             category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "트립닷컴", status: "진행중", end_date: extractDate(rawText)
           });
         }
@@ -161,14 +213,17 @@ export async function GET() {
     const { data: hotelsHtml } = await axios.get(HOTELS_URL, { headers: stealthHeaders });
     const $ = cheerio.load(hotelsHtml);
     $('h2, h3, .offer-card-title, .title').each((index, element) => {
-      const title = $(element).text().trim();
+      const rawTitle = $(element).text().trim();
       const rawText = $(element).closest('a').text();
       const parentLink = $(element).closest('a').attr('href');
-      if (title && (title.includes('할인') || title.includes('특가'))) {
+      if (rawTitle && (rawTitle.includes('할인') || rawTitle.includes('특가'))) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[호텔스닷컴] ${title}`)) {
+        const title = `[호텔스닷컴] ${rawTitle}`;
+        addLiveTitle("호텔스닷컴", title);
+
+        if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
-            title: `[호텔스닷컴] ${title}`, content: genericContent, url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
+            title, content: genericContent, url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
             category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "호텔스닷컴", status: "진행중", end_date: extractDate(rawText)
           });
         }
@@ -181,14 +236,17 @@ export async function GET() {
     const { data: mrtHtml } = await axios.get(MRT_URL, { headers: stealthHeaders });
     const $ = cheerio.load(mrtHtml);
     $('.promotion-item, a[href*="/promotions/"]').each((index, element) => {
-      const title = $(element).find('.title, h3, p').first().text().trim() || $(element).text().trim();
+      const rawTitle = $(element).find('.title, h3, p').first().text().trim() || $(element).text().trim();
       const rawDateText = $(element).find('.date, .period').text().trim() || $(element).text();
       const link = $(element).attr('href') || $(element).closest('a').attr('href');
-      if (title && title.length > 5) {
+      if (rawTitle && rawTitle.length > 5) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[마이리얼트립] ${title}`)) {
+        const title = `[마이리얼트립] ${rawTitle}`;
+        addLiveTitle("마이리얼트립", title);
+
+        if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
-            title: `[마이리얼트립] ${title}`, content: genericContent, url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
+            title, content: genericContent, url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
             category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", end_date: extractDate(rawDateText) 
           });
         }
@@ -197,21 +255,24 @@ export async function GET() {
   } catch (e: any) {}
 
   // ====================================================================
-  // 5. CU 편의점 (날짜 집중 타격)
+  // 5. CU 편의점 
   // ====================================================================
   try {
     const CU_URL = 'https://cu.bgfretail.com/brand_info/news_list.do?category=event';
     const { data: cuHtml } = await axios.get(CU_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(cuHtml);
     $('.event_list li, .relm_list li, .info_event li, table tbody tr').each((index, element) => {
-      const title = $(element).find('.tit, .txt, .subject, a').first().text().trim();
+      const rawTitle = $(element).find('.tit, .txt, .subject, a').first().text().trim();
       const rawDateText = $(element).find('.date, .time, td:nth-child(3)').text().trim() || $(element).text(); 
       const rawLink = $(element).find('a').attr('href');
-      if (title && title.length > 2) {
+      if (rawTitle && rawTitle.length > 2) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[CU] ${title}`)) {
+        const title = `[CU] ${rawTitle}`;
+        addLiveTitle("CU", title);
+
+        if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title: `[CU] ${title}`, content: genericContent, url: rawLink ? (rawLink.startsWith('http') ? rawLink : `https://cu.bgfretail.com${rawLink}`) : CU_URL, 
+            title, content: genericContent, url: rawLink ? (rawLink.startsWith('http') ? rawLink : `https://cu.bgfretail.com${rawLink}`) : CU_URL, 
             category: "음식", sub_category: "편의점", author: "AutoBot", mall_name: "CU", status: "진행중", end_date: extractDate(rawDateText),
           });
         }
@@ -220,21 +281,24 @@ export async function GET() {
   } catch (e: any) {}
 
   // ====================================================================
-  // 6. 맥도날드 (날짜 집중 타격)
+  // 6. 맥도날드 
   // ====================================================================
   try {
     const MAC_URL = 'https://www.mcdonalds.co.kr/kor/promotion/list.do';
     const { data: macHtml } = await axios.get(MAC_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(macHtml);
     $('.promList li, .promotion_list li, div.contArea li').each((index, element) => {
-      const title = $(element).find('.tit, strong, h3').first().text().trim() || $(element).text().trim();
+      const rawTitle = $(element).find('.tit, strong, h3').first().text().trim() || $(element).text().trim();
       const rawDateText = $(element).find('.date, .term, p.info').text().trim() || $(element).text();
       const rawLink = $(element).find('a').attr('href');
-      if (title && title.length > 2) {
+      if (rawTitle && rawTitle.length > 2) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[맥도날드] ${title}`)) {
+        const title = `[맥도날드] ${rawTitle}`;
+        addLiveTitle("맥도날드", title);
+
+        if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title: `[맥도날드] ${title}`, content: genericContent, url: rawLink ? `https://www.mcdonalds.co.kr${rawLink}` : MAC_URL, 
+            title, content: genericContent, url: rawLink ? `https://www.mcdonalds.co.kr${rawLink}` : MAC_URL, 
             category: "음식", sub_category: "맥도날드", author: "AutoBot", mall_name: "맥도날드", status: "진행중", end_date: extractDate(rawDateText),
           });
         }
@@ -243,21 +307,24 @@ export async function GET() {
   } catch (e: any) {}
 
   // ====================================================================
-  // 7. 써브웨이 (날짜 집중 타격)
+  // 7. 써브웨이 
   // ====================================================================
   try {
     const SUB_URL = 'https://www.subway.co.kr/eventList';
     const { data: subHtml } = await axios.get(SUB_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(subHtml);
     $('.event_list li, .event-item, div.pd_list_wrap li').each((index, element) => {
-      const title = $(element).find('.title, strong, h3, h4').first().text().trim();
+      const rawTitle = $(element).find('.title, strong, h3, h4').first().text().trim();
       const rawDateText = $(element).find('.date, .period, p').text().trim() || $(element).text();
       const rawLink = $(element).find('a').attr('href');
-      if (title && title.length > 2) {
+      if (rawTitle && rawTitle.length > 2) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[써브웨이] ${title}`)) {
+        const title = `[써브웨이] ${rawTitle}`;
+        addLiveTitle("써브웨이", title);
+
+        if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title: `[써브웨이] ${title}`, content: genericContent, url: rawLink ? `https://www.subway.co.kr${rawLink}` : SUB_URL, 
+            title, content: genericContent, url: rawLink ? `https://www.subway.co.kr${rawLink}` : SUB_URL, 
             category: "음식", sub_category: "써브웨이", author: "AutoBot", mall_name: "써브웨이", status: "진행중", end_date: extractDate(rawDateText),
           });
         }
@@ -266,21 +333,24 @@ export async function GET() {
   } catch (e: any) {}
 
   // ====================================================================
-  // 8. 도미노피자 (날짜 집중 타격)
+  // 8. 도미노피자 
   // ====================================================================
   try {
     const DOMINO_URL = 'https://web.dominos.co.kr/event/list?gubun=E0200';
     const { data: dominoHtml } = await axios.get(DOMINO_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(dominoHtml);
     $('.event_list_wrap li, .event-list li, article.event-list li').each((index, element) => {
-      const title = $(element).find('.tit, .subject, strong, p').first().text().trim();
+      const rawTitle = $(element).find('.tit, .subject, strong, p').first().text().trim();
       const rawDateText = $(element).find('.date, .term, p.term').text().trim() || $(element).text();
       const rawLink = $(element).find('a').attr('href');
-      if (title && title.length > 2) {
+      if (rawTitle && rawTitle.length > 2) {
         totalScrapedCount++;
-        if (!existingTitles.includes(`[도미노피자] ${title}`)) {
+        const title = `[도미노피자] ${rawTitle}`;
+        addLiveTitle("도미노피자", title);
+
+        if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title: `[도미노피자] ${title}`, content: genericContent, url: rawLink ? `https://web.dominos.co.kr${rawLink}` : DOMINO_URL, 
+            title, content: genericContent, url: rawLink ? `https://web.dominos.co.kr${rawLink}` : DOMINO_URL, 
             category: "음식", sub_category: "도미노피자", author: "AutoBot", mall_name: "도미노피자", status: "진행중", end_date: extractDate(rawDateText),
           });
         }
@@ -289,7 +359,7 @@ export async function GET() {
   } catch (e: any) {}
 
   // ====================================================================
-  // 9. DB 저장 및 자동 청소 로직
+  // 9. DB 저장 및 [초정밀] 자동 마감 청소 로직
   // ====================================================================
   let newCount = 0;
   try {
@@ -300,31 +370,49 @@ export async function GET() {
   } catch(e: any) {}
 
   try {
-    const { data: allDeals } = await supabase.from('deals').select('id, end_date, status');
-    if (allDeals) {
+    const { data: activeDeals } = await supabase.from('deals').select('id, title, end_date, mall_name, status').neq('status', '종료');
+    
+    if (activeDeals) {
       const now = new Date();
       now.setHours(0, 0, 0, 0); 
       
       const toUpdateIds: number[] = [];
       const toDeleteIds: number[] = [];
 
-      allDeals.forEach((deal: any) => {
-        if (!deal.end_date) return;
-        const endDate = new Date(deal.end_date);
-        endDate.setHours(0, 0, 0, 0);
+      activeDeals.forEach((deal: any) => {
+        let isZombieOrExpired = false;
 
-        if (isNaN(endDate.getTime())) return;
-        const diffDays = (now.getTime() - endDate.getTime()) / (1000 * 3600 * 24);
-        
-        if (diffDays > 7) toDeleteIds.push(deal.id); 
-        else if (diffDays > 0 && deal.status !== "종료") toUpdateIds.push(deal.id); 
+        // [2순위 작동] 날짜가 적혀 있다면 날짜를 기준으로 마감 판단
+        if (deal.end_date) {
+          const endDate = new Date(deal.end_date);
+          endDate.setHours(0, 0, 0, 0);
+          if (!isNaN(endDate.getTime())) {
+            const diffDays = (now.getTime() - endDate.getTime()) / (1000 * 3600 * 24);
+            if (diffDays > 7) { toDeleteIds.push(deal.id); return; } 
+            if (diffDays > 0) isZombieOrExpired = true; 
+          }
+        }
+
+        // [3순위 작동] 원본 사이트 명부에서 사라졌다면 즉시 좀비로 간주하고 마감 처리!
+        if (!isZombieOrExpired && deal.mall_name && liveTitlesByMall[deal.mall_name] && liveTitlesByMall[deal.mall_name].length > 0) {
+          if (!liveTitlesByMall[deal.mall_name].includes(deal.title)) {
+            isZombieOrExpired = true; 
+          }
+        }
+
+        if (isZombieOrExpired) {
+          toUpdateIds.push(deal.id);
+        }
       });
 
+      // DB 업데이트 실행
       if (toDeleteIds.length > 0) await supabase.from('deals').delete().in('id', toDeleteIds);
       if (toUpdateIds.length > 0) await supabase.from('deals').update({ status: '종료' }).in('id', toUpdateIds);
+      
+      console.log(`🧹 [좀비 청소 완료] ${toUpdateIds.length}개의 만료된 이벤트가 종료 탭으로 이동되었습니다.`);
     }
   } catch (e: any) {}
 
-  console.log(`🎉 [타겟 집중 완료] 새로운 글 ${newCount}개 추가됨.`);
+  console.log(`🎉 [크롤러 완료] 새로운 글 ${newCount}개 추가됨.`);
   return NextResponse.json({ success: true, new_count: newCount, total_scraped: totalScrapedCount });
 }
