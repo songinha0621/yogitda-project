@@ -14,7 +14,6 @@ const stealthHeaders = {
   'Cache-Control': 'no-cache'
 };
 
-// 💡 [2순위] 문장에 섞인 날짜를 무조건 YYYY-MM-DD로 뽑아내는 함수
 const extractDate = (text: string) => {
   if (!text || text.includes('소진') || text.includes('미정')) return null;
   const cleanText = text.replace(/\s+/g, ''); 
@@ -45,15 +44,16 @@ const extractDate = (text: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [기획의 정석] 제목/본문/날짜 분할 크롤러 가동...");
+  console.log("🤖 [4단 분리 완전체] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
   let totalScrapedCount = 0; 
   
-  // 💡 [3순위 핵심] 각 쇼핑몰(mall_name)별로 현재 살아있는 이벤트 제목들을 저장하는 명부
-  const liveTitlesByMall: Record<string, string[]> = {};
-  const addLiveTitle = (mall: string, title: string) => {
-    if (!liveTitlesByMall[mall]) liveTitlesByMall[mall] = [];
-    liveTitlesByMall[mall].push(title);
+  // 💡 [업그레이드] 말머리와 쇼핑몰 이름의 조합으로 좀비 명부 철저히 분리
+  const liveTitlesBySubAndMall: Record<string, string[]> = {};
+  const addLiveTitle = (sub: string, mall: string, title: string) => {
+    const key = `${sub}_${mall}`;
+    if (!liveTitlesBySubAndMall[key]) liveTitlesBySubAndMall[key] = [];
+    liveTitlesBySubAndMall[key].push(title);
   };
 
   let existingTitles: string[] = [];
@@ -65,68 +65,144 @@ export async function GET() {
   const genericContent = "💡 상세 내용은 혜택 받으러 가기 링크를 통해 확인하세요.";
 
   // ====================================================================
-  // 1. 네이버페이 (✨ 제목은 짧게, 조건은 본문에, 날짜는 D-day 역산!)
+  // 1. 네이버페이 [현장결제] & [온라인] (로직 완벽 통합)
+  // ====================================================================
+  const naverPayApis = [
+    { url: 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1', sub: '네이버페이 현장결제' },
+    { url: 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=ONLINE&secondCategory=&page=1', sub: '네이버페이 온라인' }
+  ];
+
+  for (const target of naverPayApis) {
+    try {
+      const { data: naverData } = await axios.get(target.url, { headers: stealthHeaders });
+
+      if (naverData?.elements) {
+        totalScrapedCount += naverData.elements.length; 
+        
+        naverData.elements.forEach((item: any) => {
+          const baseTitle = `[${item.promotionName}] ${item.exposeTitle}`;
+          let conditionText = item.exposeCondition || item.benefitCondition || item.conditionText || "";
+          conditionText = conditionText.replace(/\n/g, ' ').trim();
+          
+          const title = conditionText ? `${baseTitle} - ${conditionText}` : baseTitle;
+          const link = item.detailUrl || item.link || "https://pay.naver.com";
+          
+          addLiveTitle(target.sub, item.promotionName, title); 
+
+          if (!existingTitles.includes(title)) {
+            let calculatedEndDate = null;
+            const rawJson = JSON.stringify(item);
+
+            const explicitDate = item.endDate || item.endDt || item.displayEndDate || item.endYmd;
+            if (explicitDate) calculatedEndDate = extractDate(String(explicitDate));
+
+            if (!calculatedEndDate) {
+              const dDayMatch = rawJson.match(/"D-(\d+)"/i) || rawJson.match(/"[a-zA-Z]*(?:dday|leftday|dayleft|remain)[a-zA-Z]*"\s*:\s*(\d+)/i);
+              if (dDayMatch) {
+                const daysLeft = parseInt(dDayMatch[1], 10);
+                const targetDate = new Date();
+                targetDate.setDate(targetDate.getDate() + daysLeft); 
+                calculatedEndDate = targetDate.toISOString().split('T')[0];
+              }
+            }
+
+            if (!calculatedEndDate) {
+              const dateMatch = rawJson.match(/(202\d)[-./]?(0[1-9]|1[0-2])[-./]?(0[1-9]|[12]\d|3[01])/);
+              if (dateMatch) calculatedEndDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+            }
+
+            scrapedDeals.push({
+              title, content: genericContent, url: link, 
+              category: "쇼핑", sub_category: target.sub, author: "AutoBot", mall_name: item.promotionName, status: "진행중", 
+              end_date: calculatedEndDate, 
+            });
+          }
+        });
+      }
+    } catch (e: any) { console.error(`🚨 ${target.sub} 에러:`, e.message); }
+  }
+
+  // ====================================================================
+  // 1-2. 네이버페이 [쿠폰] (딥 스캐너 탑재)
   // ====================================================================
   try {
-    const NAVER_API_URL = 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1';
-    const { data: naverData } = await axios.get(NAVER_API_URL, { headers: stealthHeaders });
+    const COUPON_URL = 'https://point.pay.naver.com/coupon/home/online';
+    const { data: couponHtml } = await axios.get(COUPON_URL, { headers: stealthHeaders });
+    const $c = cheerio.load(couponHtml);
+    const nextDataStr = $c('#__NEXT_DATA__').html();
 
-    if (naverData?.elements) {
-      totalScrapedCount += naverData.elements.length; 
+    if (nextDataStr) {
+      const nextData = JSON.parse(nextDataStr);
       
-      naverData.elements.forEach((item: any) => {
-        // 💡 1. 제목: 깔끔하게 이름만! (예: [뚜레쥬르] 클래식 롤케이크 증정)
-        const title = `[${item.promotionName}] ${item.exposeTitle}`;
-        
-        // 💡 2. 본문 내용: 혜택 조건(예: 2만원 이상 결제 시)을 본문으로 밀어넣기
-        let conditionText = item.exposeCondition || item.benefitCondition || item.conditionText || "";
-        conditionText = conditionText.replace(/\n/g, ' ').trim();
-        const detailContent = conditionText ? `📌 [조건]\n${conditionText}\n\n${genericContent}` : genericContent;
-        
-        const link = item.detailUrl || item.link || "https://pay.naver.com";
-        
-        addLiveTitle(item.promotionName, title); // 실시간 명부에 등록
+      // JSON 안에서 쿠폰 데이터만 귀신같이 발라내는 함수
+      const findCoupons = (obj: any): any[] => {
+          let found: any[] = [];
+          if (!obj || typeof obj !== 'object') return found;
 
-        if (!existingTitles.includes(title)) {
-          
-          // 💡 3. 날짜: D-Day 꼼수 및 명시적 날짜 역산 (상세페이지 접속 X)
-          let calculatedEndDate = null;
-          const rawJson = JSON.stringify(item);
+          const brand = obj.brandName || obj.merchantName || obj.partnerName || obj.promotionName;
+          const benefit = obj.benefitName || obj.couponName || obj.title || obj.exposeTitle || obj.benefit;
+          const condition = obj.benefitCondition || obj.exposeCondition || obj.conditionText || obj.description || obj.desc || "";
 
-          // 3-1: 대놓고 주는 날짜 텍스트가 있는지 확인
-          const explicitDate = item.endDate || item.endDt || item.displayEndDate || item.endYmd;
-          if (explicitDate) {
-            calculatedEndDate = extractDate(String(explicitDate));
+          if (brand && benefit && typeof brand === 'string' && typeof benefit === 'string' && brand.length < 30 && benefit.length < 50) {
+              if (('couponNo' in obj || 'couponId' in obj || 'validity' in obj || 'downloadUrl' in obj || 'benefit' in obj) && !('isError' in obj)) {
+                  found.push({ brand, benefit, condition });
+              }
           }
+          for (const key in obj) { found = found.concat(findCoupons(obj[key])); }
+          return found;
+      };
 
-          // 3-2: "D-3" 같은 문구를 발견하면 오늘 날짜 기준 +3일로 자동 계산
-          if (!calculatedEndDate) {
-            const dDayMatch = rawJson.match(/"D-(\d+)"/i) || rawJson.match(/"[a-zA-Z]*(?:dday|leftday|dayleft|remain)[a-zA-Z]*"\s*:\s*(\d+)/i);
-            if (dDayMatch) {
-              const daysLeft = parseInt(dDayMatch[1], 10);
-              const targetDate = new Date();
-              targetDate.setDate(targetDate.getDate() + daysLeft); 
-              calculatedEndDate = targetDate.toISOString().split('T')[0];
-            }
+      const extracted = findCoupons(nextData);
+      // 중복 제거
+      const uniqueCoupons = Array.from(new Set(extracted.map(e => JSON.stringify(e)))).map((e: any) => JSON.parse(e));
+
+      uniqueCoupons.forEach((c: any) => {
+          const baseTitle = `[${c.brand}] ${c.benefit}`;
+          let cText = c.condition.replace(/\n/g, ' ').trim();
+          const title = cText ? `${baseTitle} - ${cText}` : baseTitle;
+
+          addLiveTitle("네이버페이 쿠폰", c.brand, title);
+
+          if (!existingTitles.includes(title)) {
+            totalScrapedCount++;
+            scrapedDeals.push({
+                title, content: genericContent, url: COUPON_URL, 
+                category: "쇼핑", sub_category: "네이버페이 쿠폰", author: "AutoBot", mall_name: c.brand, status: "진행중", 
+                end_date: null, // 요청하신 대로 날짜 세팅 불가
+            });
           }
-
-          // 3-3: 그래도 없으면 JSON 전체에서 날짜 형태 숫자 찾아내기
-          if (!calculatedEndDate) {
-            const dateMatch = rawJson.match(/(202\d)[-./]?(0[1-9]|1[0-2])[-./]?(0[1-9]|[12]\d|3[01])/);
-            if (dateMatch) {
-              calculatedEndDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
-            }
-          }
-
-          scrapedDeals.push({
-            title, content: detailContent, url: link, 
-            category: "쇼핑", sub_category: "네이버페이", author: "AutoBot", mall_name: item.promotionName, status: "진행중", 
-            end_date: calculatedEndDate, 
-          });
-        }
       });
     }
-  } catch (e: any) { console.error("🚨 네이버페이 에러:", e.message); }
+  } catch (e: any) { console.error("🚨 네이버페이 쿠폰 에러:", e.message); }
+
+  // ====================================================================
+  // 1-3. 네이버페이 [블로그] (공식 API 연동)
+  // ====================================================================
+  try {
+    const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=5&page=1';
+    const { data: blogData } = await axios.get(BLOG_API, { headers: stealthHeaders });
+    
+    if (blogData?.isSuccess && blogData?.result?.items) {
+        blogData.result.items.forEach((item: any) => {
+            const rawTitle = item.titleNoFormatting;
+            // 핵심 알짜 혜택(키워드)만 엄선
+            if (rawTitle && (rawTitle.includes('이벤트') || rawTitle.includes('혜택') || rawTitle.includes('적립'))) {
+                const title = `[네이버페이 공식블로그] ${rawTitle}`;
+                const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
+                
+                // 블로그 글은 좀비 마감 처리에서 제외하기 위해 addLiveTitle를 생략합니다.
+                if (!existingTitles.includes(title)) {
+                    totalScrapedCount++;
+                    scrapedDeals.push({
+                        title, content: genericContent, url: link, 
+                        category: "쇼핑", sub_category: "네이버페이 블로그", author: "AutoBot", mall_name: "네이버페이", status: "진행중", 
+                        end_date: null, 
+                    });
+                }
+            }
+        });
+    }
+  } catch (e: any) { console.error("🚨 네이버페이 블로그 에러:", e.message); }
 
   // ====================================================================
   // 2. 버거킹
@@ -143,7 +219,7 @@ export async function GET() {
       if (rawTitle && rawTitle.includes('프로모션')) {
         totalScrapedCount++;
         const title = `[버거킹] ${rawTitle}`;
-        addLiveTitle("버거킹", title); 
+        addLiveTitle("버거킹", "버거킹", title); 
 
         if (!existingTitles.includes(title)) {
           let finalLink = rawLink && rawLink.includes('event/detail') ? (rawLink.startsWith('http') ? rawLink : `https://www.burgerking.co.kr${rawLink.startsWith('/') ? '' : '/'}${rawLink}`) : BK_EVENT_URL;
@@ -170,7 +246,7 @@ export async function GET() {
       if (rawTitle) {
         totalScrapedCount++;
         const title = `[T멤버십] ${rawTitle}`;
-        addLiveTitle("SKT", title);
+        addLiveTitle("통신사혜택", "SKT", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
@@ -196,7 +272,7 @@ export async function GET() {
       if (rawText && rawText.length > 5) {
         totalScrapedCount++;
         const title = `[트립닷컴] ${rawText}`;
-        addLiveTitle("트립닷컴", title);
+        addLiveTitle("숙박/호텔", "트립닷컴", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
@@ -219,7 +295,7 @@ export async function GET() {
       if (rawTitle && (rawTitle.includes('할인') || rawTitle.includes('특가'))) {
         totalScrapedCount++;
         const title = `[호텔스닷컴] ${rawTitle}`;
-        addLiveTitle("호텔스닷컴", title);
+        addLiveTitle("숙박/호텔", "호텔스닷컴", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
@@ -242,7 +318,7 @@ export async function GET() {
       if (rawTitle && rawTitle.length > 5) {
         totalScrapedCount++;
         const title = `[마이리얼트립] ${rawTitle}`;
-        addLiveTitle("마이리얼트립", title);
+        addLiveTitle("액티비티/렌트", "마이리얼트립", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
@@ -268,7 +344,7 @@ export async function GET() {
       if (rawTitle && rawTitle.length > 2) {
         totalScrapedCount++;
         const title = `[CU] ${rawTitle}`;
-        addLiveTitle("CU", title);
+        addLiveTitle("편의점", "CU", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
@@ -294,7 +370,7 @@ export async function GET() {
       if (rawTitle && rawTitle.length > 2) {
         totalScrapedCount++;
         const title = `[맥도날드] ${rawTitle}`;
-        addLiveTitle("맥도날드", title);
+        addLiveTitle("맥도날드", "맥도날드", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
@@ -320,7 +396,7 @@ export async function GET() {
       if (rawTitle && rawTitle.length > 2) {
         totalScrapedCount++;
         const title = `[써브웨이] ${rawTitle}`;
-        addLiveTitle("써브웨이", title);
+        addLiveTitle("써브웨이", "써브웨이", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
@@ -346,7 +422,7 @@ export async function GET() {
       if (rawTitle && rawTitle.length > 2) {
         totalScrapedCount++;
         const title = `[도미노피자] ${rawTitle}`;
-        addLiveTitle("도미노피자", title);
+        addLiveTitle("도미노피자", "도미노피자", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
@@ -370,7 +446,7 @@ export async function GET() {
   } catch(e: any) {}
 
   try {
-    const { data: activeDeals } = await supabase.from('deals').select('id, title, end_date, mall_name, status').neq('status', '종료');
+    const { data: activeDeals } = await supabase.from('deals').select('id, title, end_date, mall_name, sub_category, status').neq('status', '종료');
     
     if (activeDeals) {
       const now = new Date();
@@ -382,7 +458,7 @@ export async function GET() {
       activeDeals.forEach((deal: any) => {
         let isZombieOrExpired = false;
 
-        // [2순위 작동] 날짜가 적혀 있다면 날짜를 기준으로 마감 판단
+        // [2순위 작동] 날짜 만료 체크
         if (deal.end_date) {
           const endDate = new Date(deal.end_date);
           endDate.setHours(0, 0, 0, 0);
@@ -393,9 +469,10 @@ export async function GET() {
           }
         }
 
-        // [3순위 작동] 원본 사이트 명부에서 사라졌다면 즉시 좀비로 간주하고 마감 처리!
-        if (!isZombieOrExpired && deal.mall_name && liveTitlesByMall[deal.mall_name] && liveTitlesByMall[deal.mall_name].length > 0) {
-          if (!liveTitlesByMall[deal.mall_name].includes(deal.title)) {
+        // [3순위 작동] 철벽 좀비 방어선: 말머리+쇼핑몰이 정확히 일치하는 명부에서 대조
+        const key = `${deal.sub_category}_${deal.mall_name}`;
+        if (!isZombieOrExpired && deal.mall_name && liveTitlesBySubAndMall[key] && liveTitlesBySubAndMall[key].length > 0) {
+          if (!liveTitlesBySubAndMall[key].includes(deal.title)) {
             isZombieOrExpired = true; 
           }
         }
@@ -405,7 +482,6 @@ export async function GET() {
         }
       });
 
-      // DB 업데이트 실행
       if (toDeleteIds.length > 0) await supabase.from('deals').delete().in('id', toDeleteIds);
       if (toUpdateIds.length > 0) await supabase.from('deals').update({ status: '종료' }).in('id', toUpdateIds);
       
