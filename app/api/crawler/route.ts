@@ -44,11 +44,10 @@ const extractDate = (text: string) => {
 };
 
 export async function GET() {
-  console.log("🤖 [4단 분리 완전체] 크롤러 가동 시작...");
+  console.log("🤖 [제목/조건 분리 + D-day 역산] 크롤러 가동 시작...");
   const scrapedDeals: any[] = [];  
   let totalScrapedCount = 0; 
   
-  // 💡 [업그레이드] 말머리와 쇼핑몰 이름의 조합으로 좀비 명부 철저히 분리
   const liveTitlesBySubAndMall: Record<string, string[]> = {};
   const addLiveTitle = (sub: string, mall: string, title: string) => {
     const key = `${sub}_${mall}`;
@@ -65,7 +64,7 @@ export async function GET() {
   const genericContent = "💡 상세 내용은 혜택 받으러 가기 링크를 통해 확인하세요.";
 
   // ====================================================================
-  // 1. 네이버페이 [현장결제] & [온라인] (로직 완벽 통합)
+  // 1. 네이버페이 [현장결제] & [온라인]
   // ====================================================================
   const naverPayApis = [
     { url: 'https://pay.naver.com/web-api/pub/benefit/payment/accumulation-promotions?firstCategory=DOMESTIC_INSTORE&secondCategory=&page=1', sub: '네이버페이 현장결제' },
@@ -80,11 +79,14 @@ export async function GET() {
         totalScrapedCount += naverData.elements.length; 
         
         naverData.elements.forEach((item: any) => {
-          const baseTitle = `[${item.promotionName}] ${item.exposeTitle}`;
-          let conditionText = item.exposeCondition || item.benefitCondition || item.conditionText || "";
-          conditionText = conditionText.replace(/\n/g, ' ').trim();
+          // 💡 1. [제목] 깔끔하게 브랜드와 혜택 이름만 조합
+          const title = `[${item.promotionName}] ${item.exposeTitle}`;
           
-          const title = conditionText ? `${baseTitle} - ${conditionText}` : baseTitle;
+          // 💡 2. [본문] 연회색 세부 조건 텍스트를 찾아서 본문에 예쁘게 삽입!
+          let conditionText = item.exposeCondition || item.benefitCondition || item.conditionText || item.benefitDescription || item.desc || "";
+          conditionText = String(conditionText).replace(/\n/g, ' ').trim();
+          const detailContent = conditionText ? `📌 [조건]\n${conditionText}\n\n${genericContent}` : genericContent;
+          
           const link = item.detailUrl || item.link || "https://pay.naver.com";
           
           addLiveTitle(target.sub, item.promotionName, title); 
@@ -96,6 +98,7 @@ export async function GET() {
             const explicitDate = item.endDate || item.endDt || item.displayEndDate || item.endYmd;
             if (explicitDate) calculatedEndDate = extractDate(String(explicitDate));
 
+            // 💡 3. [종료 날짜] D-X 를 발견하면 자동 역산 (대표님 아이디어)
             if (!calculatedEndDate) {
               const dDayMatch = rawJson.match(/"D-(\d+)"/i) || rawJson.match(/"[a-zA-Z]*(?:dday|leftday|dayleft|remain)[a-zA-Z]*"\s*:\s*(\d+)/i);
               if (dDayMatch) {
@@ -112,8 +115,14 @@ export async function GET() {
             }
 
             scrapedDeals.push({
-              title, content: genericContent, url: link, 
-              category: "쇼핑", sub_category: target.sub, author: "AutoBot", mall_name: item.promotionName, status: "진행중", 
+              title: title, 
+              content: detailContent, // ✨ 연회색 조건 텍스트 완벽 삽입!
+              url: link, 
+              category: "쇼핑", 
+              sub_category: target.sub, 
+              author: "AutoBot", 
+              mall_name: item.promotionName, 
+              status: "진행중", 
               end_date: calculatedEndDate, 
             });
           }
@@ -123,7 +132,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 1-2. 네이버페이 [쿠폰] (딥 스캐너 탑재)
+  // 1-2. 네이버페이 [쿠폰]
   // ====================================================================
   try {
     const COUPON_URL = 'https://point.pay.naver.com/coupon/home/online';
@@ -134,14 +143,13 @@ export async function GET() {
     if (nextDataStr) {
       const nextData = JSON.parse(nextDataStr);
       
-      // JSON 안에서 쿠폰 데이터만 귀신같이 발라내는 함수
       const findCoupons = (obj: any): any[] => {
           let found: any[] = [];
           if (!obj || typeof obj !== 'object') return found;
 
           const brand = obj.brandName || obj.merchantName || obj.partnerName || obj.promotionName;
           const benefit = obj.benefitName || obj.couponName || obj.title || obj.exposeTitle || obj.benefit;
-          const condition = obj.benefitCondition || obj.exposeCondition || obj.conditionText || obj.description || obj.desc || "";
+          const condition = obj.benefitCondition || obj.exposeCondition || obj.conditionText || obj.description || obj.desc || obj.benefitDescription || "";
 
           if (brand && benefit && typeof brand === 'string' && typeof benefit === 'string' && brand.length < 30 && benefit.length < 50) {
               if (('couponNo' in obj || 'couponId' in obj || 'validity' in obj || 'downloadUrl' in obj || 'benefit' in obj) && !('isError' in obj)) {
@@ -153,22 +161,28 @@ export async function GET() {
       };
 
       const extracted = findCoupons(nextData);
-      // 중복 제거
       const uniqueCoupons = Array.from(new Set(extracted.map(e => JSON.stringify(e)))).map((e: any) => JSON.parse(e));
 
       uniqueCoupons.forEach((c: any) => {
-          const baseTitle = `[${c.brand}] ${c.benefit}`;
-          let cText = c.condition.replace(/\n/g, ' ').trim();
-          const title = cText ? `${baseTitle} - ${cText}` : baseTitle;
+          const title = `[${c.brand}] ${c.benefit}`;
+          
+          let cText = c.condition ? String(c.condition).replace(/\n/g, ' ').trim() : "";
+          const detailContent = cText ? `📌 [조건]\n${cText}\n\n${genericContent}` : genericContent;
 
           addLiveTitle("네이버페이 쿠폰", c.brand, title);
 
           if (!existingTitles.includes(title)) {
             totalScrapedCount++;
             scrapedDeals.push({
-                title, content: genericContent, url: COUPON_URL, 
-                category: "쇼핑", sub_category: "네이버페이 쿠폰", author: "AutoBot", mall_name: c.brand, status: "진행중", 
-                end_date: null, // 요청하신 대로 날짜 세팅 불가
+                title: title, 
+                content: detailContent, // 쿠폰의 세부 조건도 본문으로 삽입!
+                url: COUPON_URL, 
+                category: "쇼핑", 
+                sub_category: "네이버페이 쿠폰", 
+                author: "AutoBot", 
+                mall_name: c.brand, 
+                status: "진행중", 
+                end_date: null,
             });
           }
       });
@@ -176,7 +190,7 @@ export async function GET() {
   } catch (e: any) { console.error("🚨 네이버페이 쿠폰 에러:", e.message); }
 
   // ====================================================================
-  // 1-3. 네이버페이 [블로그] (공식 API 연동)
+  // 1-3. 네이버페이 [블로그]
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=5&page=1';
@@ -185,17 +199,21 @@ export async function GET() {
     if (blogData?.isSuccess && blogData?.result?.items) {
         blogData.result.items.forEach((item: any) => {
             const rawTitle = item.titleNoFormatting;
-            // 핵심 알짜 혜택(키워드)만 엄선
             if (rawTitle && (rawTitle.includes('이벤트') || rawTitle.includes('혜택') || rawTitle.includes('적립'))) {
                 const title = `[네이버페이 공식블로그] ${rawTitle}`;
                 const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
                 
-                // 블로그 글은 좀비 마감 처리에서 제외하기 위해 addLiveTitle를 생략합니다.
                 if (!existingTitles.includes(title)) {
                     totalScrapedCount++;
                     scrapedDeals.push({
-                        title, content: genericContent, url: link, 
-                        category: "쇼핑", sub_category: "네이버페이 블로그", author: "AutoBot", mall_name: "네이버페이", status: "진행중", 
+                        title: title, 
+                        content: genericContent, 
+                        url: link, 
+                        category: "쇼핑", 
+                        sub_category: "네이버페이 블로그", 
+                        author: "AutoBot", 
+                        mall_name: "네이버페이", 
+                        status: "진행중", 
                         end_date: null, 
                     });
                 }
@@ -208,25 +226,31 @@ export async function GET() {
   // 2. 버거킹
   // ====================================================================
   try {
-    const BK_EVENT_URL = 'https://www.burgerking.co.kr/#/event';
+    const BK_EVENT_URL = 'https://www.burgerking.co.kr/event/ongoing';
     const { data: bkHtml } = await axios.get(BK_EVENT_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(bkHtml);
-    $('.event_list li, .list_ev li').each((index, element) => {
-      const rawTitle = $(element).find('.tit, .txt, strong').text().trim();
-      const rawDateText = $(element).find('.date').text().trim() || $(element).text(); 
+    $('li, div.event-item, article.list, .item').each((index, element) => {
+      const rawText = $(element).text().replace(/\s+/g, ' ').trim();
+      const rawTitle = $(element).find('.tit, .txt, strong, h3, h4, p').first().text().trim() || rawText;
       const rawLink = $(element).find('a').attr('href');
       
-      if (rawTitle && rawTitle.includes('프로모션')) {
+      if (rawText && rawText.includes('프로모션')) {
         totalScrapedCount++;
-        const title = `[버거킹] ${rawTitle}`;
+        const title = `[버거킹] ${rawTitle.substring(0, 30)}...`;
         addLiveTitle("버거킹", "버거킹", title); 
 
         if (!existingTitles.includes(title)) {
-          let finalLink = rawLink && rawLink.includes('event/detail') ? (rawLink.startsWith('http') ? rawLink : `https://www.burgerking.co.kr${rawLink.startsWith('/') ? '' : '/'}${rawLink}`) : BK_EVENT_URL;
+          let finalLink = rawLink ? (rawLink.startsWith('http') ? rawLink : `https://www.burgerking.co.kr${rawLink.startsWith('/') ? '' : '/'}${rawLink}`) : BK_EVENT_URL;
           scrapedDeals.push({
-            title, content: genericContent, url: finalLink, 
-            category: "음식", sub_category: "버거킹", author: "AutoBot", mall_name: "버거킹", status: "진행중", 
-            end_date: extractDate(rawDateText),
+            title: title, 
+            content: genericContent, 
+            url: finalLink, 
+            category: "음식", 
+            sub_category: "버거킹", 
+            author: "AutoBot", 
+            mall_name: "버거킹", 
+            status: "진행중", 
+            end_date: extractDate(rawText),
           });
         }
       }
@@ -250,8 +274,14 @@ export async function GET() {
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title, content: genericContent, url: "https://sktmembership.co.kr", 
-            category: "쇼핑", sub_category: "통신사혜택", author: "AutoBot", mall_name: "SKT", status: "진행중", 
+            title: title, 
+            content: genericContent, 
+            url: "https://sktmembership.co.kr", 
+            category: "쇼핑", 
+            sub_category: "통신사혜택", 
+            author: "AutoBot", 
+            mall_name: "SKT", 
+            status: "진행중", 
             end_date: extractDate(rawDateText), 
           });
         }
@@ -271,13 +301,20 @@ export async function GET() {
       const link = $(element).attr('href');
       if (rawText && rawText.length > 5) {
         totalScrapedCount++;
-        const title = `[트립닷컴] ${rawText}`;
+        const title = `[트립닷컴] ${rawText.substring(0, 40)}`;
         addLiveTitle("숙박/호텔", "트립닷컴", title);
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
-            title, content: genericContent, url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
-            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "트립닷컴", status: "진행중", end_date: extractDate(rawText)
+            title: title, 
+            content: genericContent, 
+            url: link?.startsWith('http') ? link : `https://kr.trip.com${link}`, 
+            category: "여행", 
+            sub_category: "숙박/호텔", 
+            author: "AutoBot", 
+            mall_name: "트립닷컴", 
+            status: "진행중", 
+            end_date: extractDate(rawText)
           });
         }
       }
@@ -299,8 +336,15 @@ export async function GET() {
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
-            title, content: genericContent, url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
-            category: "여행", sub_category: "숙박/호텔", author: "AutoBot", mall_name: "호텔스닷컴", status: "진행중", end_date: extractDate(rawText)
+            title: title, 
+            content: genericContent, 
+            url: parentLink ? (parentLink.startsWith('http') ? parentLink : `https://kr.hotels.com${parentLink}`) : HOTELS_URL, 
+            category: "여행", 
+            sub_category: "숙박/호텔", 
+            author: "AutoBot", 
+            mall_name: "호텔스닷컴", 
+            status: "진행중", 
+            end_date: extractDate(rawText)
           });
         }
       }
@@ -322,8 +366,15 @@ export async function GET() {
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({ 
-            title, content: genericContent, url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
-            category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", end_date: extractDate(rawDateText) 
+            title: title, 
+            content: genericContent, 
+            url: link?.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, 
+            category: "여행", 
+            sub_category: "액티비티/렌트", 
+            author: "AutoBot", 
+            mall_name: "마이리얼트립", 
+            status: "진행중", 
+            end_date: extractDate(rawDateText) 
           });
         }
       }
@@ -348,8 +399,15 @@ export async function GET() {
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title, content: genericContent, url: rawLink ? (rawLink.startsWith('http') ? rawLink : `https://cu.bgfretail.com${rawLink}`) : CU_URL, 
-            category: "음식", sub_category: "편의점", author: "AutoBot", mall_name: "CU", status: "진행중", end_date: extractDate(rawDateText),
+            title: title, 
+            content: genericContent, 
+            url: rawLink ? (rawLink.startsWith('http') ? rawLink : `https://cu.bgfretail.com${rawLink}`) : CU_URL, 
+            category: "음식", 
+            sub_category: "편의점", 
+            author: "AutoBot", 
+            mall_name: "CU", 
+            status: "진행중", 
+            end_date: extractDate(rawDateText),
           });
         }
       }
@@ -374,8 +432,15 @@ export async function GET() {
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title, content: genericContent, url: rawLink ? `https://www.mcdonalds.co.kr${rawLink}` : MAC_URL, 
-            category: "음식", sub_category: "맥도날드", author: "AutoBot", mall_name: "맥도날드", status: "진행중", end_date: extractDate(rawDateText),
+            title: title, 
+            content: genericContent, 
+            url: rawLink ? `https://www.mcdonalds.co.kr${rawLink}` : MAC_URL, 
+            category: "음식", 
+            sub_category: "맥도날드", 
+            author: "AutoBot", 
+            mall_name: "맥도날드", 
+            status: "진행중", 
+            end_date: extractDate(rawDateText),
           });
         }
       }
@@ -400,8 +465,15 @@ export async function GET() {
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title, content: genericContent, url: rawLink ? `https://www.subway.co.kr${rawLink}` : SUB_URL, 
-            category: "음식", sub_category: "써브웨이", author: "AutoBot", mall_name: "써브웨이", status: "진행중", end_date: extractDate(rawDateText),
+            title: title, 
+            content: genericContent, 
+            url: rawLink ? `https://www.subway.co.kr${rawLink}` : SUB_URL, 
+            category: "음식", 
+            sub_category: "써브웨이", 
+            author: "AutoBot", 
+            mall_name: "써브웨이", 
+            status: "진행중", 
+            end_date: extractDate(rawDateText),
           });
         }
       }
@@ -426,8 +498,15 @@ export async function GET() {
 
         if (!existingTitles.includes(title)) {
           scrapedDeals.push({
-            title, content: genericContent, url: rawLink ? `https://web.dominos.co.kr${rawLink}` : DOMINO_URL, 
-            category: "음식", sub_category: "도미노피자", author: "AutoBot", mall_name: "도미노피자", status: "진행중", end_date: extractDate(rawDateText),
+            title: title, 
+            content: genericContent, 
+            url: rawLink ? `https://web.dominos.co.kr${rawLink}` : DOMINO_URL, 
+            category: "음식", 
+            sub_category: "도미노피자", 
+            author: "AutoBot", 
+            mall_name: "도미노피자", 
+            status: "진행중", 
+            end_date: extractDate(rawDateText),
           });
         }
       }
@@ -458,7 +537,6 @@ export async function GET() {
       activeDeals.forEach((deal: any) => {
         let isZombieOrExpired = false;
 
-        // [2순위 작동] 날짜 만료 체크
         if (deal.end_date) {
           const endDate = new Date(deal.end_date);
           endDate.setHours(0, 0, 0, 0);
@@ -469,7 +547,6 @@ export async function GET() {
           }
         }
 
-        // [3순위 작동] 철벽 좀비 방어선: 말머리+쇼핑몰이 정확히 일치하는 명부에서 대조
         const key = `${deal.sub_category}_${deal.mall_name}`;
         if (!isZombieOrExpired && deal.mall_name && liveTitlesBySubAndMall[key] && liveTitlesBySubAndMall[key].length > 0) {
           if (!liveTitlesBySubAndMall[key].includes(deal.title)) {
