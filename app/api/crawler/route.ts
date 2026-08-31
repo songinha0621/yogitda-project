@@ -230,7 +230,12 @@ export async function GET() {
         
         // 너무 짧거나 긴 쓰레기 텍스트 거르고, 혜택 키워드 확인
         if (rawText.length > 5 && rawText.length < 150 && !rawText.includes('로그인')) {
-          if (rawText.includes('할인') || rawText.includes('프로모션') || rawText.includes('특가') || rawText.includes('이벤트')) {
+          
+          // 💡 [수정] 버거킹은 '프로모션' 포함 시에만, 그 외는 기존 키워드 모두 허용
+          if (
+            (target.mall === '버거킹' && rawText.includes('프로모션')) ||
+            (target.mall !== '버거킹' && (rawText.includes('할인') || rawText.includes('프로모션') || rawText.includes('특가') || rawText.includes('이벤트')))
+          ) {
             
             // 날짜나 쓸데없는 기호 앞부분까지만 깔끔하게 제목으로 잘라내기
             const cleanTitleMatch = rawText.match(/([가-힣a-zA-Z0-9\s!@#$%^&*()_+]+)/);
