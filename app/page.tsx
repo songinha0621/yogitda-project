@@ -61,7 +61,6 @@ export default function Home() {
   const [selectedSub, setSelectedSub] = useState("전체");
   const [sortOption, setSortOption] = useState("최신순");
   
-  // 💡 [신규] 현재 활성화된 탭 (인기글 vs 전체글) - 기본값을 '인기'로 설정
   const [currentTab, setCurrentTab] = useState("인기");
 
   const [auth, setAuth] = useState({ loggedIn: false, userId: "", userRole: "guest" });
@@ -141,7 +140,6 @@ export default function Home() {
           query = query.or(`title.ilike.%${activeSearch}%,content.ilike.%${activeSearch}%`);
         }
 
-        // 💡 [수정됨] 인기 탭 분리 적용 (인기 탭이면 추천순 정렬 강제)
         if (currentTab === "인기") {
           query = query.order('upvotes', { ascending: false }).order('views', { ascending: false });
         } else {
@@ -273,23 +271,48 @@ export default function Home() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // 💡 [핵심 버그 픽스] '대박이다(hot)' 버튼 누를 때마다 upvotes(좋아요) 수치가 오르내리도록 수정
   const togglePostAction = async (postId: number, actionType: string) => {
     if (!auth.loggedIn) return alert("로그인 필요");
     const dbId = postId < 10000 ? postId : postId - 10000;
 
     const { data: existingActions } = await supabase.from('post_actions').select('*').eq('post_id', dbId).eq('user_id', auth.userId);
     
+    const targetPost = posts.find(p => p.id === postId);
+    if (!targetPost) return;
+
     let isAdding = true;
 
     if (['hot', 'soso', 'cold'].includes(actionType)) {
       const existingThermo = existingActions?.find(a => ['hot', 'soso', 'cold'].includes(a.action_type));
+      let upvotesChange = 0;
+
       if (existingThermo) {
         await supabase.from('post_actions').delete().eq('id', existingThermo.id);
+        
+        // 기존에 누른 게 'hot(대박이다)' 였다면 좋아요 수 감소 처리
+        if (existingThermo.action_type === 'hot') {
+          upvotesChange -= 1;
+        }
+
         if (existingThermo.action_type === actionType) {
+          if (upvotesChange !== 0) {
+            await supabase.from('deals').update({ upvotes: Math.max(0, targetPost.upvotes + upvotesChange) }).eq('id', dbId);
+          }
           fetchTargetData(); return; 
         }
       }
+      
+      // 새로 누른 버튼이 'hot(대박이다)' 인 경우 좋아요 수 증가 처리
+      if (actionType === 'hot') {
+        upvotesChange += 1;
+      }
+
       await supabase.from('post_actions').insert([{ post_id: dbId, user_id: auth.userId, action_type: actionType }]);
+      
+      if (upvotesChange !== 0) {
+        await supabase.from('deals').update({ upvotes: Math.max(0, targetPost.upvotes + upvotesChange) }).eq('id', dbId);
+      }
     } 
     else {
       const targetAction = existingActions?.find(a => a.action_type === actionType);
@@ -299,14 +322,11 @@ export default function Home() {
       } else {
         await supabase.from('post_actions').insert([{ post_id: dbId, user_id: auth.userId, action_type: actionType }]);
       }
-    }
 
-    const targetPost = posts.find(p => p.id === postId);
-    if (!targetPost) return;
-
-    if (actionType === 'upvote') {
-      const newUpvotes = isAdding ? targetPost.upvotes + 1 : targetPost.upvotes - 1;
-      await supabase.from('deals').update({ upvotes: newUpvotes }).eq('id', dbId);
+      if (actionType === 'upvote') {
+        const newUpvotes = isAdding ? targetPost.upvotes + 1 : targetPost.upvotes - 1;
+        await supabase.from('deals').update({ upvotes: newUpvotes }).eq('id', dbId);
+      }
     }
 
     if (actionType === 'report' && isAdding) {
@@ -813,7 +833,6 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* 💡 [신규] 카테고리 진입 시 기본으로 활성화되는 '인기글' 탭 UI */}
                 <div className="flex space-x-4 border-b border-slate-200 px-2">
                   <button 
                     onClick={() => { setCurrentTab("인기"); setCurrentPage(1); }} 
@@ -873,7 +892,6 @@ export default function Home() {
                           </button>
                         </div>
                         <div className="flex items-center text-xs text-slate-400 font-semibold gap-3 shrink-0 flex-wrap">
-                          {/* 💡 [추가됨] 목록 화면에서 종료 날짜 표시 */}
                           {p.endDate && (
                             <span className="text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded-lg">
                               ~ {p.endDate} 까지
@@ -928,7 +946,6 @@ export default function Home() {
                       </h1>
                     </div>
 
-                    {/* 💡 [추가됨] 상세 페이지 화면에서 눈에 띄는 종료 날짜 박스 표시 */}
                     {post.endDate && (
                       <div className="inline-block bg-red-50 border border-red-200 rounded-2xl px-4 py-2 mb-2">
                         <span className="text-red-600 font-bold text-xs">
