@@ -61,6 +61,7 @@ export default function Home() {
   const [selectedSub, setSelectedSub] = useState("전체");
   const [sortOption, setSortOption] = useState("최신순");
   
+  // 💡 현재 활성화된 탭 (인기글 vs 전체글) - 기본값을 '인기'로 설정
   const [currentTab, setCurrentTab] = useState("인기");
 
   const [auth, setAuth] = useState({ loggedIn: false, userId: "", userRole: "guest" });
@@ -140,6 +141,7 @@ export default function Home() {
           query = query.or(`title.ilike.%${activeSearch}%,content.ilike.%${activeSearch}%`);
         }
 
+        // 💡 인기 탭 분리 적용 (인기 탭이면 추천순 정렬 강제)
         if (currentTab === "인기") {
           query = query.order('upvotes', { ascending: false }).order('views', { ascending: false });
         } else {
@@ -271,13 +273,13 @@ export default function Home() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // 💡 [핵심 버그 픽스] '대박이다(hot)' 버튼 누를 때마다 upvotes(좋아요) 수치가 오르내리도록 수정
   const togglePostAction = async (postId: number, actionType: string) => {
     if (!auth.loggedIn) return alert("로그인 필요");
     const dbId = postId < 10000 ? postId : postId - 10000;
 
     const { data: existingActions } = await supabase.from('post_actions').select('*').eq('post_id', dbId).eq('user_id', auth.userId);
     
+    // 💡 [핵심 추가] targetPost를 상단으로 끌어올려 '대박이다(hot)' 버튼도 좋아요(upvotes)와 연동되게 합니다.
     const targetPost = posts.find(p => p.id === postId);
     if (!targetPost) return;
 
@@ -285,16 +287,17 @@ export default function Home() {
 
     if (['hot', 'soso', 'cold'].includes(actionType)) {
       const existingThermo = existingActions?.find(a => ['hot', 'soso', 'cold'].includes(a.action_type));
-      let upvotesChange = 0;
+      let upvotesChange = 0; // 💡 좋아요 수치 증감 계산용 변수
 
       if (existingThermo) {
         await supabase.from('post_actions').delete().eq('id', existingThermo.id);
         
-        // 기존에 누른 게 'hot(대박이다)' 였다면 좋아요 수 감소 처리
+        // 기존에 누른 게 'hot(대박이다)' 였다면 좋아요 수 감소
         if (existingThermo.action_type === 'hot') {
           upvotesChange -= 1;
         }
 
+        // 같은 버튼 클릭 시 취소 적용
         if (existingThermo.action_type === actionType) {
           if (upvotesChange !== 0) {
             await supabase.from('deals').update({ upvotes: Math.max(0, targetPost.upvotes + upvotesChange) }).eq('id', dbId);
@@ -303,13 +306,14 @@ export default function Home() {
         }
       }
       
-      // 새로 누른 버튼이 'hot(대박이다)' 인 경우 좋아요 수 증가 처리
+      // 새로 누른 버튼이 'hot(대박이다)' 인 경우 좋아요 수 증가
       if (actionType === 'hot') {
         upvotesChange += 1;
       }
 
       await supabase.from('post_actions').insert([{ post_id: dbId, user_id: auth.userId, action_type: actionType }]);
-      
+
+      // DB에 upvotes 수치 반영 (추천순 정렬 연동을 위함)
       if (upvotesChange !== 0) {
         await supabase.from('deals').update({ upvotes: Math.max(0, targetPost.upvotes + upvotesChange) }).eq('id', dbId);
       }
@@ -833,6 +837,7 @@ export default function Home() {
                   )}
                 </div>
 
+                {/* 💡 [원본 100% 복구] 원래 있던 직관적인 탭 UI 그대로 유지 */}
                 <div className="flex space-x-4 border-b border-slate-200 px-2">
                   <button 
                     onClick={() => { setCurrentTab("인기"); setCurrentPage(1); }} 
@@ -861,6 +866,7 @@ export default function Home() {
                     ))}
                   </div>
                   
+                  {/* 💡 [원본 100% 복구] 삭제되었던 셀렉트 박스 완벽하게 되살려둠 */}
                   {currentTab === "전체" && (
                     <div className="flex-shrink-0">
                       <select value={sortOption} onChange={(e) => { setSortOption(e.target.value); setCurrentPage(1); }} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none text-slate-600 shadow-sm cursor-pointer">
