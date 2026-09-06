@@ -57,9 +57,8 @@ const findDeepCondition = (obj: any): string => {
 };
 
 export async function GET() {
-  console.log("🤖 [엑스레이 진단 + DB 강제 리셋 + 부활 로직] 크롤러 가동 시작...");
+  console.log("🤖 [7일 종료탭 보관 로직 복원] 크롤러 가동 시작...");
   
-  // ✨ 터미널에 상세 내역을 띄워줄 엑스레이 진단 변수들
   const diagnostics: Record<string, number> = {
     N_현장결제: 0,
     N_온라인: 0,
@@ -117,7 +116,6 @@ export async function GET() {
         diagnostics[target.diagKey] += naverData.elements.length; 
         
         naverData.elements.forEach((item: any) => {
-          // ✨ [DB 꼬임 해결] 카테고리 이름을 명시적으로 박아넣어 기존 글과 충돌 방지
           const title = `[${target.sub}] [${item.promotionName}] ${item.exposeTitle}`;
           
           let conditionText = item.exposeCondition || item.benefitCondition || findDeepCondition(item);
@@ -170,7 +168,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 1-2. 네이버페이 [쿠폰]
+  // ✨ 1-2. 네이버페이 [쿠폰] (사진 양식 완벽 대응, 날짜 null)
   // ====================================================================
   try {
     const COUPON_API_URL = 'https://point.pay.naver.com/pd/public-api/coupon/v1/usages/by-category?couponUsageType=ONLINE';
@@ -183,13 +181,15 @@ export async function GET() {
           let found: any[] = [];
           if (!obj || typeof obj !== 'object') return found;
 
-          const brand = obj.usageName || obj.brandName || obj.merchantName || obj.promotionName;
+          // 💡 [핵심] 사진의 정보에 1:1로 매칭되는 필드만 정확히 핀셋 추출
+          const brand = obj.merchantName || obj.brandName || obj.usageName || obj.promotionName; // 가게이름
           
           if (brand && typeof brand === 'string' && brand.length < 30) {
-              const benefit = obj.couponName || obj.benefitName || obj.title || obj.exposeTitle || obj.benefit || "할인 쿠폰";
-              const condition = obj.conditionText || obj.benefitCondition || findDeepCondition(obj);
+              const benefit = obj.benefitName || obj.couponName || obj.title || obj.exposeTitle || "할인 쿠폰"; // 할인금액
+              const condition = obj.conditionText || obj.benefitCondition || findDeepCondition(obj); // 할인조건
               found.push({ brand, benefit, condition, raw: obj });
           }
+          
           for (const key of Object.keys(obj)) { 
             if (typeof obj[key] === 'object') found = found.concat(extractCoupons(obj[key])); 
           }
@@ -200,18 +200,14 @@ export async function GET() {
       const uniqueCoupons = Array.from(new Set(extracted.map(e => JSON.stringify(e)))).map((e: any) => JSON.parse(e));
 
       uniqueCoupons.forEach((c: any) => {
-          // ✨ [DB 꼬임 해결] 명시적 꼬리표 부착
           const title = `[네이버페이 쿠폰] [${c.brand}] ${c.benefit}`;
-          
           let cText = c.condition ? String(c.condition).replace(/\n/g, ' ').trim() : "";
-          const detailContent = cText ? `📌 [조건]\n${cText}\n\n${genericContent}` : genericContent;
+          const detailContent = cText ? `📌 [조건] ${cText}` : genericContent;
 
           addLiveTitle("네이버페이 쿠폰", c.brand, title);
           diagnostics.N_쿠폰++;
 
           if (!existingTitles.includes(title)) {
-            const extractedDate = extractDate(JSON.stringify(c.raw)); 
-            
             scrapedDeals.push({
                 title: title, 
                 content: detailContent, 
@@ -221,7 +217,7 @@ export async function GET() {
                 author: "AutoBot", 
                 mall_name: c.brand, 
                 status: "진행중", 
-                end_date: extractedDate,
+                end_date: null, // ✨ 요구사항: 종료날짜 안 가져옴
             });
           }
       });
@@ -231,10 +227,10 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 1-3. 네이버페이 [블로그 -> app]
+  // 1-3. 네이버페이 [블로그 -> app] (20개 수색 + 발표일 회피)
   // ====================================================================
   try {
-    const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=5&page=1';
+    const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
     const { data: blogData } = await axios.get(BLOG_API, { headers: stealthHeaders, validateStatus: () => true });
     
     if (blogData?.isSuccess && blogData?.result?.items) {
@@ -243,13 +239,16 @@ export async function GET() {
             const rawContent = item.briefContents || ""; 
             
             if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
-                // ✨ [DB 꼬임 해결] 확실한 카테고리 꼬리표 부여
                 const title = `[네이버페이 app] ${rawTitle}`;
                 const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
                 
-                const extractedDate = extractDate(rawTitle + " " + rawContent);
+                let textForDate = rawTitle + " " + rawContent;
+                if (textForDate.includes('발표')) {
+                    textForDate = textForDate.split('발표')[0]; 
+                }
                 
-                // ✨ 과거 차단 필터
+                const extractedDate = extractDate(textForDate);
+                
                 let isExpired = false;
                 if (extractedDate) {
                     const today = new Date();
@@ -589,7 +588,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 7. 파리바게뜨 (키워드 + 원 스마트 필터 탑재)
+  // 7. 파리바게뜨 
   // ====================================================================
   try {
     const PARIS_URL = 'https://www.paris.co.kr/promotion/';
@@ -639,7 +638,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 8. DB 저장 및 [초정밀] 자동 마감 청소 로직
+  // ✨ 8. DB 저장 및 [7일 종료탭 보관] 동기화 로직 복원
   // ====================================================================
   let newCount = 0;
   try {
@@ -652,6 +651,7 @@ export async function GET() {
   }
 
   try {
+    // ✨ 7일 경과 확인을 위해 '종료' 상태를 제외하고 가져왔던 기존 로직 복원
     const { data: activeDeals } = await supabase.from('deals').select('id, title, end_date, mall_name, sub_category, status').neq('status', '종료');
     
     if (activeDeals) {
@@ -669,6 +669,7 @@ export async function GET() {
           endDate.setHours(0, 0, 0, 0);
           if (!isNaN(endDate.getTime())) {
             const diffDays = (now.getTime() - endDate.getTime()) / (1000 * 3600 * 24);
+            // 💡 7일 초과 시 영구 삭제, 1~7일 사이는 종료 상태로!
             if (diffDays > 7) { toDeleteIds.push(deal.id); return; } 
             if (diffDays > 0) isZombieOrExpired = true; 
           }
@@ -677,6 +678,7 @@ export async function GET() {
         const key = `${deal.sub_category}_${deal.mall_name}`;
         if (!isZombieOrExpired && deal.mall_name && liveTitlesBySubAndMall[key] && liveTitlesBySubAndMall[key].length > 0) {
           if (!liveTitlesBySubAndMall[key].includes(deal.title)) {
+            // 사이트에서 내려갔을 때 즉각 삭제가 아니라 '종료 탭'으로 보냄
             isZombieOrExpired = true; 
           }
         }
@@ -697,12 +699,11 @@ export async function GET() {
     }
 
   } catch (e: any) { 
-    errors.push(`DB Update Error: ${e.message}`); 
+    errors.push(`DB Update/Delete Error: ${e.message}`); 
   }
 
   console.log(`🎉 [크롤러 완료] 새로운 글 ${newCount}개 추가됨.`);
   
-  // 💡 터미널에 상세 내역 엑스레이 출력!
   return NextResponse.json({ 
     success: true, 
     new_count: newCount, 
