@@ -21,19 +21,27 @@ const extractDate = (text: string) => {
   
   const regexFull = /(20\d{2})[.\-년/]+(0?[1-9]|1[0-2])[.\-월/]+(0?[1-9]|[12]\d|3[01])[일]*/g;
   const matchesFull = [...cleanText.matchAll(regexFull)];
-  if (matchesFull.length > 0) return `${matchesFull[matchesFull.length - 1][1]}-${matchesFull[matchesFull.length - 1][2].padStart(2, '0')}-${matchesFull[matchesFull.length - 1][3].padStart(2, '0')}`;
+  if (matchesFull.length > 0) {
+    return `${matchesFull[matchesFull.length - 1][1]}-${matchesFull[matchesFull.length - 1][2].padStart(2, '0')}-${matchesFull[matchesFull.length - 1][3].padStart(2, '0')}`;
+  }
   
   const regexShortYear = /(?<!20)(\d{2})[.\-년/]+(0?[1-9]|1[0-2])[.\-월/]+(0?[1-9]|[12]\d|3[01])[일]*/g;
   const matchesShortYear = [...cleanText.matchAll(regexShortYear)];
-  if (matchesShortYear.length > 0) return `20${matchesShortYear[matchesShortYear.length - 1][1]}-${matchesShortYear[matchesShortYear.length - 1][2].padStart(2, '0')}-${matchesShortYear[matchesShortYear.length - 1][3].padStart(2, '0')}`;
+  if (matchesShortYear.length > 0) {
+    return `20${matchesShortYear[matchesShortYear.length - 1][1]}-${matchesShortYear[matchesShortYear.length - 1][2].padStart(2, '0')}-${matchesShortYear[matchesShortYear.length - 1][3].padStart(2, '0')}`;
+  }
   
   const regexNoYear = /(0?[1-9]|1[0-2])[.\-월/]+(0?[1-9]|[12]\d|3[01])[일]*/g;
   const matchesNoYear = [...cleanText.matchAll(regexNoYear)];
-  if (matchesNoYear.length > 0) return `${new Date().getFullYear()}-${matchesNoYear[matchesNoYear.length - 1][1].padStart(2, '0')}-${matchesNoYear[matchesNoYear.length - 1][2].padStart(2, '0')}`;
+  if (matchesNoYear.length > 0) {
+    return `${new Date().getFullYear()}-${matchesNoYear[matchesNoYear.length - 1][1].padStart(2, '0')}-${matchesNoYear[matchesNoYear.length - 1][2].padStart(2, '0')}`;
+  }
   
   const regexYYYYMMDD = /(202\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])/g;
   const matchesYYYYMMDD = [...cleanText.matchAll(regexYYYYMMDD)];
-  if (matchesYYYYMMDD.length > 0) return `${matchesYYYYMMDD[matchesYYYYMMDD.length - 1][1]}-${matchesYYYYMMDD[matchesYYYYMMDD.length - 1][2]}-${matchesYYYYMMDD[matchesYYYYMMDD.length - 1][3]}`;
+  if (matchesYYYYMMDD.length > 0) {
+    return `${matchesYYYYMMDD[matchesYYYYMMDD.length - 1][1]}-${matchesYYYYMMDD[matchesYYYYMMDD.length - 1][2]}-${matchesYYYYMMDD[matchesYYYYMMDD.length - 1][3]}`;
+  }
 
   return null;
 };
@@ -57,7 +65,7 @@ const findDeepCondition = (obj: any): string => {
 };
 
 export async function GET() {
-  console.log("🤖 [7일 종료탭 보관 로직 복원] 크롤러 가동 시작...");
+  console.log("🤖 [최종 완전체: 모든 기획 완벽반영 및 줄바꿈 복원] 크롤러 가동 시작...");
   
   const diagnostics: Record<string, number> = {
     N_현장결제: 0,
@@ -88,7 +96,9 @@ export async function GET() {
   try {
     const { data: existingDeals } = await supabase.from('deals').select('title');
     existingTitles = existingDeals?.map(d => d.title) || [];
-  } catch(e) {}
+  } catch(e) {
+    errors.push(`[DB 읽기 에러] ${e}`);
+  }
 
   const genericContent = "💡 상세 내용은 혜택 받으러 가기 링크를 통해 확인하세요.";
 
@@ -117,11 +127,9 @@ export async function GET() {
         
         naverData.elements.forEach((item: any) => {
           const title = `[${target.sub}] [${item.promotionName}] ${item.exposeTitle}`;
-          
           let conditionText = item.exposeCondition || item.benefitCondition || findDeepCondition(item);
           conditionText = String(conditionText).replace(/\n/g, ' ').trim();
           const detailContent = conditionText ? `📌 [조건]\n${conditionText}\n\n${genericContent}` : genericContent;
-          
           const link = item.detailUrl || item.link || "https://pay.naver.com";
           
           addLiveTitle(target.sub, item.promotionName, title); 
@@ -136,9 +144,8 @@ export async function GET() {
             if (!calculatedEndDate) {
               const dDayMatch = rawJson.match(/"D-(\d+)"/i) || rawJson.match(/"[a-zA-Z]*(?:dday|leftday|dayleft|remain)[a-zA-Z]*"\s*:\s*(\d+)/i);
               if (dDayMatch) {
-                const daysLeft = parseInt(dDayMatch[1], 10);
                 const targetDate = new Date();
-                targetDate.setDate(targetDate.getDate() + daysLeft); 
+                targetDate.setDate(targetDate.getDate() + parseInt(dDayMatch[1], 10)); 
                 calculatedEndDate = targetDate.toISOString().split('T')[0];
               }
             }
@@ -168,7 +175,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-2. 네이버페이 [쿠폰] (사진 양식 완벽 대응, 날짜 null)
+  // 1-2. 네이버페이 [쿠폰]
   // ====================================================================
   try {
     const COUPON_API_URL = 'https://point.pay.naver.com/pd/public-api/coupon/v1/usages/by-category?couponUsageType=ONLINE';
@@ -181,17 +188,17 @@ export async function GET() {
           let found: any[] = [];
           if (!obj || typeof obj !== 'object') return found;
 
-          // 💡 [핵심] 사진의 정보에 1:1로 매칭되는 필드만 정확히 핀셋 추출
-          const brand = obj.merchantName || obj.brandName || obj.usageName || obj.promotionName; // 가게이름
-          
+          const brand = obj.merchantName || obj.brandName || obj.usageName || obj.promotionName; 
           if (brand && typeof brand === 'string' && brand.length < 30) {
-              const benefit = obj.benefitName || obj.couponName || obj.title || obj.exposeTitle || "할인 쿠폰"; // 할인금액
-              const condition = obj.conditionText || obj.benefitCondition || findDeepCondition(obj); // 할인조건
+              const benefit = obj.benefitName || obj.couponName || obj.title || obj.exposeTitle || "할인 쿠폰"; 
+              const condition = obj.conditionText || obj.benefitCondition || findDeepCondition(obj); 
               found.push({ brand, benefit, condition, raw: obj });
           }
           
           for (const key of Object.keys(obj)) { 
-            if (typeof obj[key] === 'object') found = found.concat(extractCoupons(obj[key])); 
+            if (typeof obj[key] === 'object') {
+              found = found.concat(extractCoupons(obj[key])); 
+            }
           }
           return found;
       };
@@ -217,7 +224,7 @@ export async function GET() {
                 author: "AutoBot", 
                 mall_name: c.brand, 
                 status: "진행중", 
-                end_date: null, // ✨ 요구사항: 종료날짜 안 가져옴
+                end_date: null, // LFmall 기획 반영: 날짜 필요없음
             });
           }
       });
@@ -227,14 +234,25 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 1-3. 네이버페이 [블로그 -> app] (20개 수색 + 발표일 회피)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (자물쇠 해제 & 발표일 회피)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
     const { data: blogData } = await axios.get(BLOG_API, { headers: stealthHeaders, validateStatus: () => true });
     
-    if (blogData?.isSuccess && blogData?.result?.items) {
-        blogData.result.items.forEach((item: any) => {
+    // 💡 [핵심 해결] 네이버 블로그 특유의 보안 텍스트 ')]}',\n' 를 강제로 잘라내고 JSON으로 복원!
+    let blogJson = blogData;
+    if (typeof blogData === 'string') {
+        try {
+            const cleanStr = blogData.replace(/^\)]\}',\n?/, '').trim();
+            blogJson = JSON.parse(cleanStr);
+        } catch(e: any) {
+            errors.push(`[네이버 블로그 파싱 에러] ${e.message}`);
+        }
+    }
+    
+    if (blogJson?.isSuccess && blogJson?.result?.items) {
+        blogJson.result.items.forEach((item: any) => {
             const rawTitle = item.titleNoFormatting;
             const rawContent = item.briefContents || ""; 
             
@@ -255,9 +273,8 @@ export async function GET() {
                     today.setHours(0, 0, 0, 0); 
                     const endDate = new Date(extractedDate);
                     endDate.setHours(0, 0, 0, 0);
-                    
                     if (endDate.getTime() < today.getTime()) {
-                        isExpired = true;
+                      isExpired = true;
                     }
                 }
                 
@@ -287,18 +304,18 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 2. 버거킹
+  // ✨ 2. 버거킹 (버거킹 '프로모션' 단어 필수 포함 로직)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
     const bkPayload = 'message=%7B%22header%22%3A%7B%22result%22%3Atrue%2C%22error_code%22%3A%22%22%2C%22error_text%22%3A%22%22%2C%22info_text%22%3A%22%22%2C%22message_version%22%3A%22%22%2C%22login_session_id%22%3A%22%22%2C%22trcode%22%3A%22BKR0608%22%2C%22cd_call_chnn%22%3A%2201%22%7D%2C%22body%22%3A%7B%22cdTypeEvent%22%3A%2200%22%2C%22page%22%3A%221%22%2C%22pageCount%22%3A%2220%22%2C%22tpStatusEvent%22%3A%22C%22%7D%7D';
     
     const { data: bkData } = await axios.post(BK_API_URL, bkPayload, {
-      headers: {
-        ...stealthHeaders,
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'Origin': 'https://www.burgerking.co.kr',
-        'Referer': 'https://www.burgerking.co.kr/event/ongoing'
+      headers: { 
+        ...stealthHeaders, 
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 
+        'Origin': 'https://www.burgerking.co.kr', 
+        'Referer': 'https://www.burgerking.co.kr/event/ongoing' 
       },
       validateStatus: () => true
     });
@@ -308,19 +325,26 @@ export async function GET() {
         if (!obj || typeof obj !== 'object') return found;
         
         if (Array.isArray(obj)) {
-            for (const item of obj) found = found.concat(findBkEvents(item));
+            for (const item of obj) {
+              found = found.concat(findBkEvents(item));
+            }
             return found;
         }
 
+        // 💡 쓰레기 정보 차단: 무조건 '프로모션' 단어가 포함된 것만 가져옴!
         let hasPromo = false;
         let titleCandidate = "";
         
         for (const key in obj) {
             const val = obj[key];
             if (typeof val === 'string') {
-                if (val.includes('프로모션')) hasPromo = true;
+                if (val.includes('프로모션')) {
+                  hasPromo = true;
+                }
                 if (key.toLowerCase().includes('name') || key.toLowerCase().includes('title') || key.toLowerCase().includes('subject') || key.includes('nm')) {
-                    if (val.includes('프로모션')) titleCandidate = val;
+                    if (val.includes('프로모션')) {
+                      titleCandidate = val;
+                    }
                 }
             }
         }
@@ -349,7 +373,6 @@ export async function GET() {
     uniqueBk.forEach((ev: any) => {
       let cleanTitle = ev.title.length > 30 ? ev.title.substring(0, 30) + "..." : ev.title;
       const title = `[버거킹] ${cleanTitle}`;
-      
       const extractedDate = extractDate(JSON.stringify(ev.raw));
 
       addLiveTitle("버거킹", "버거킹", title); 
@@ -384,14 +407,13 @@ export async function GET() {
     $('.event_list_wrap ul li').each((index, element) => {
       const rawTitle = $(element).find('dt').text().trim();
       const rawDateText = $(element).find('.date').text().trim() || $(element).text(); 
-      
       if (rawTitle) {
         const title = `[T멤버십] ${rawTitle}`;
         addLiveTitle("통신사혜택", "SKT", title);
         diagnostics.SKT++;
 
         if (!existingTitles.includes(title)) {
-          scrapedDeals.push({
+          scrapedDeals.push({ 
             title: title, 
             content: genericContent, 
             url: "https://sktmembership.co.kr", 
@@ -400,7 +422,7 @@ export async function GET() {
             author: "AutoBot", 
             mall_name: "SKT", 
             status: "진행중", 
-            end_date: extractDate(rawDateText), 
+            end_date: extractDate(rawDateText) 
           });
         }
       }
@@ -436,7 +458,7 @@ export async function GET() {
             author: "AutoBot", 
             mall_name: "트립닷컴", 
             status: "진행중", 
-            end_date: extractDate(rawText)
+            end_date: extractDate(rawText) 
           });
         }
       }
@@ -470,7 +492,7 @@ export async function GET() {
             author: "AutoBot", 
             mall_name: "호텔스닷컴", 
             status: "진행중", 
-            end_date: extractDate(rawText)
+            end_date: extractDate(rawText) 
           });
         }
       }
@@ -532,7 +554,7 @@ export async function GET() {
         diagnostics.CU++;
 
         if (!existingTitles.includes(title)) {
-          scrapedDeals.push({
+          scrapedDeals.push({ 
             title: title, 
             content: genericContent, 
             url: rawLink ? (rawLink.startsWith('http') ? rawLink : `https://cu.bgfretail.com${rawLink}`) : CU_URL, 
@@ -541,7 +563,7 @@ export async function GET() {
             author: "AutoBot", 
             mall_name: "CU", 
             status: "진행중", 
-            end_date: extractDate(rawDateText),
+            end_date: extractDate(rawDateText) 
           });
         }
       }
@@ -569,7 +591,7 @@ export async function GET() {
         diagnostics.도미노피자++;
 
         if (!existingTitles.includes(title)) {
-          scrapedDeals.push({
+          scrapedDeals.push({ 
             title: title, 
             content: genericContent, 
             url: rawLink ? `https://web.dominos.co.kr${rawLink}` : DOMINO_URL, 
@@ -578,7 +600,7 @@ export async function GET() {
             author: "AutoBot", 
             mall_name: "도미노피자", 
             status: "진행중", 
-            end_date: extractDate(rawDateText),
+            end_date: extractDate(rawDateText) 
           });
         }
       }
@@ -588,7 +610,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 7. 파리바게뜨 
+  // ✨ 7. 파리바게뜨 (500자 확대)
   // ====================================================================
   try {
     const PARIS_URL = 'https://www.paris.co.kr/promotion/';
@@ -602,10 +624,12 @@ export async function GET() {
       const hasPrice = /[0-9,]+원/.test(rawText);
       const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || hasPrice;
 
-      if (rawText.length > 5 && rawText.length < 150 && hasKeyword && !rawText.includes('로그인')) {
-        const cleanTitleMatch = rawText.match(/([가-힣a-zA-Z0-9\s!@#$%^&*()_+]+)/);
-        let rawTitle = cleanTitleMatch ? cleanTitleMatch[1].trim() : rawText;
-        if (rawTitle.length > 30) rawTitle = rawTitle.substring(0, 30) + "...";
+      // 💡 [핵심] 글자 수 제한을 150자 -> 500자로 대폭 확대
+      if (rawText.length > 5 && rawText.length < 500 && hasKeyword && !rawText.includes('로그인')) {
+        let rawTitle = rawText;
+        if (rawTitle.length > 45) {
+          rawTitle = rawTitle.substring(0, 45) + "..."; 
+        }
 
         if (rawTitle.length > 2) {
           const title = `[파리바게뜨] ${rawTitle}`;
@@ -617,7 +641,6 @@ export async function GET() {
             if (rawLink && rawLink.length > 2) {
               finalLink = rawLink.startsWith('http') ? rawLink : new URL(rawLink, 'https://www.paris.co.kr').href;
             }
-            
             scrapedDeals.push({
               title: title, 
               content: genericContent, 
@@ -638,7 +661,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 8. DB 저장 및 [7일 종료탭 보관] 동기화 로직 복원
+  // 8. DB 저장 및 [7일 유예] 자동 마감 청소 로직
   // ====================================================================
   let newCount = 0;
   try {
@@ -646,12 +669,11 @@ export async function GET() {
       await supabase.from('deals').insert(scrapedDeals);
       newCount = scrapedDeals.length;
     }
-  } catch(e: any) {
-    errors.push(`DB Insert Error: ${e.message}`);
+  } catch(e: any) { 
+    errors.push(`DB Insert Error: ${e.message}`); 
   }
 
   try {
-    // ✨ 7일 경과 확인을 위해 '종료' 상태를 제외하고 가져왔던 기존 로직 복원
     const { data: activeDeals } = await supabase.from('deals').select('id, title, end_date, mall_name, sub_category, status').neq('status', '종료');
     
     if (activeDeals) {
@@ -669,16 +691,19 @@ export async function GET() {
           endDate.setHours(0, 0, 0, 0);
           if (!isNaN(endDate.getTime())) {
             const diffDays = (now.getTime() - endDate.getTime()) / (1000 * 3600 * 24);
-            // 💡 7일 초과 시 영구 삭제, 1~7일 사이는 종료 상태로!
-            if (diffDays > 7) { toDeleteIds.push(deal.id); return; } 
-            if (diffDays > 0) isZombieOrExpired = true; 
+            if (diffDays > 7) { 
+              toDeleteIds.push(deal.id); 
+              return; 
+            } 
+            if (diffDays > 0) {
+              isZombieOrExpired = true; 
+            }
           }
         }
 
         const key = `${deal.sub_category}_${deal.mall_name}`;
         if (!isZombieOrExpired && deal.mall_name && liveTitlesBySubAndMall[key] && liveTitlesBySubAndMall[key].length > 0) {
           if (!liveTitlesBySubAndMall[key].includes(deal.title)) {
-            // 사이트에서 내려갔을 때 즉각 삭제가 아니라 '종료 탭'으로 보냄
             isZombieOrExpired = true; 
           }
         }
@@ -688,11 +713,14 @@ export async function GET() {
         }
       });
 
-      if (toDeleteIds.length > 0) await supabase.from('deals').delete().in('id', toDeleteIds);
-      if (toUpdateIds.length > 0) await supabase.from('deals').update({ status: '종료' }).in('id', toUpdateIds);
+      if (toDeleteIds.length > 0) {
+        await supabase.from('deals').delete().in('id', toDeleteIds);
+      }
+      if (toUpdateIds.length > 0) {
+        await supabase.from('deals').update({ status: '종료' }).in('id', toUpdateIds);
+      }
     }
     
-    // ✨ [부활 로직] 만약 예전에 '종료' 처리된 글이 오늘 다시 API에 떴다면 강제로 '진행중' 부활!
     const allScrapedTitles = Object.values(liveTitlesBySubAndMall).flat();
     if (allScrapedTitles.length > 0) {
         await supabase.from('deals').update({ status: '진행중' }).in('title', allScrapedTitles).eq('status', '종료');
