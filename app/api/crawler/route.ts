@@ -65,7 +65,7 @@ const findDeepCondition = (obj: any): string => {
 };
 
 export async function GET() {
-  console.log("🤖 [최종 완전체: 모든 기획 완벽반영 및 줄바꿈 복원] 크롤러 가동 시작...");
+  console.log("🤖 [최종: 네이버 블로그 제목 필터 최적화] 크롤러 가동 시작...");
   
   const diagnostics: Record<string, number> = {
     N_현장결제: 0,
@@ -96,8 +96,8 @@ export async function GET() {
   try {
     const { data: existingDeals } = await supabase.from('deals').select('title');
     existingTitles = existingDeals?.map(d => d.title) || [];
-  } catch(e) {
-    errors.push(`[DB 읽기 에러] ${e}`);
+  } catch(e: any) {
+    errors.push(`[DB 읽기 에러] ${e.message}`);
   }
 
   const genericContent = "💡 상세 내용은 혜택 받으러 가기 링크를 통해 확인하세요.";
@@ -234,13 +234,12 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (자물쇠 해제 & 발표일 회피)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (기획: 날짜가 들어있는 제목만 가져오기)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
     const { data: blogData } = await axios.get(BLOG_API, { headers: stealthHeaders, validateStatus: () => true });
     
-    // 💡 [핵심 해결] 네이버 블로그 특유의 보안 텍스트 ')]}',\n' 를 강제로 잘라내고 JSON으로 복원!
     let blogJson = blogData;
     if (typeof blogData === 'string') {
         try {
@@ -254,46 +253,57 @@ export async function GET() {
     if (blogJson?.isSuccess && blogJson?.result?.items) {
         blogJson.result.items.forEach((item: any) => {
             const rawTitle = item.titleNoFormatting;
-            const rawContent = item.briefContents || ""; 
             
             if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
-                const title = `[네이버페이 app] ${rawTitle}`;
-                const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
+                // 💡 [핵심 추가] 제목 안에 '(9/9 ~ 9/13)' 처럼 물결표와 함께 날짜 범위가 있는 패턴 검사
+                // ( 또는 [ 로 시작해서 물결(~)이 있고 다시 날짜 포맷이 나오는 형태 매칭
+                const titleDateMatch = rawTitle.match(/[\(\[].*?[~-]\s*(?:202\d[./\-년\s]+)?(\d{1,2})[./\-월]+(\d{1,2})[일\s]*[\)\]]/);
                 
-                let textForDate = rawTitle + " " + rawContent;
-                if (textForDate.includes('발표')) {
-                    textForDate = textForDate.split('발표')[0]; 
-                }
-                
-                const extractedDate = extractDate(textForDate);
-                
-                let isExpired = false;
-                if (extractedDate) {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0); 
-                    const endDate = new Date(extractedDate);
-                    endDate.setHours(0, 0, 0, 0);
-                    if (endDate.getTime() < today.getTime()) {
-                      isExpired = true;
-                    }
-                }
-                
-                if (!isExpired) {
-                    addLiveTitle("네이버페이 app", "네이버페이", title);
-                    diagnostics.N_app++;
+                // 날짜 패턴이 제목에 없으면 가차 없이 패스합니다.
+                if (titleDateMatch) {
+                    const title = `[네이버페이 app] ${rawTitle}`;
+                    const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
                     
-                    if (!existingTitles.includes(title)) {
-                        scrapedDeals.push({
-                            title: title, 
-                            content: genericContent, 
-                            url: link, 
-                            category: "쇼핑", 
-                            sub_category: "네이버페이 app", 
-                            author: "AutoBot", 
-                            mall_name: "네이버페이", 
-                            status: "진행중", 
-                            end_date: extractedDate, 
-                        });
+                    // 정규식 그룹 1과 2에서 추출한 월, 일을 가져와 종료일 만들기
+                    let year = new Date().getFullYear();
+                    const month = parseInt(titleDateMatch[1], 10);
+                    const day = parseInt(titleDateMatch[2], 10);
+                    
+                    // 연말(12월)에 연초(1월) 이벤트를 긁을 때 연도를 올려주는 센스
+                    if (new Date().getMonth() + 1 >= 11 && month <= 2) {
+                        year += 1;
+                    }
+                    
+                    const extractedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    
+                    let isExpired = false;
+                    if (extractedDate) {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0); 
+                        const endDate = new Date(extractedDate);
+                        endDate.setHours(0, 0, 0, 0);
+                        if (endDate.getTime() < today.getTime()) {
+                          isExpired = true;
+                        }
+                    }
+                    
+                    if (!isExpired) {
+                        addLiveTitle("네이버페이 app", "네이버페이", title);
+                        diagnostics.N_app++;
+                        
+                        if (!existingTitles.includes(title)) {
+                            scrapedDeals.push({
+                                title: title, 
+                                content: genericContent, 
+                                url: link, 
+                                category: "쇼핑", 
+                                sub_category: "네이버페이 app", 
+                                author: "AutoBot", 
+                                mall_name: "네이버페이", 
+                                status: "진행중", 
+                                end_date: extractedDate, // 뽑아낸 날짜 그대로 꽂아넣음
+                            });
+                        }
                     }
                 }
             }
@@ -304,7 +314,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 2. 버거킹 (버거킹 '프로모션' 단어 필수 포함 로직)
+  // 2. 버거킹 ('프로모션' 단어 필수 포함 로직)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
@@ -331,7 +341,6 @@ export async function GET() {
             return found;
         }
 
-        // 💡 쓰레기 정보 차단: 무조건 '프로모션' 단어가 포함된 것만 가져옴!
         let hasPromo = false;
         let titleCandidate = "";
         
@@ -610,7 +619,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 7. 파리바게뜨 (500자 확대)
+  // 7. 파리바게뜨 (500자 확대 및 대체 텍스트 투시 탑재)
   // ====================================================================
   try {
     const PARIS_URL = 'https://www.paris.co.kr/promotion/';
@@ -618,13 +627,17 @@ export async function GET() {
     const $ = cheerio.load(parisHtml);
     
     $('li, article, div[class*="item"], div[class*="list"], a[href*="promo"], a[href*="event"]').each((index, element) => {
-      const rawText = $(element).text().replace(/\s+/g, ' ').trim();
-      const rawLink = $(element).find('a').attr('href') || $(element).attr('href') || "";
+      let rawText = $(element).text().replace(/\s+/g, ' ').trim();
       
-      const hasPrice = /[0-9,]+원/.test(rawText);
-      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || hasPrice;
+      $(element).find('img').each((i, img) => {
+          const altText = $(img).attr('alt');
+          if (altText) rawText += " " + altText;
+      });
 
-      // 💡 [핵심] 글자 수 제한을 150자 -> 500자로 대폭 확대
+      const rawLink = $(element).find('a').attr('href') || $(element).attr('href') || "";
+      const hasPrice = /[0-9,]+원/.test(rawText);
+      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('할인') || rawText.includes('프로모션') || hasPrice;
+
       if (rawText.length > 5 && rawText.length < 500 && hasKeyword && !rawText.includes('로그인')) {
         let rawTitle = rawText;
         if (rawTitle.length > 45) {
