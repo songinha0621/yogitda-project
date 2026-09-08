@@ -264,7 +264,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (요청 사항 반영)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (요청 사항 반영: 날짜 포함 제목 추출)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
@@ -282,16 +282,18 @@ export async function GET() {
     
     if (blogJson?.isSuccess && blogJson?.result?.items) {
         blogJson.result.items.forEach((item: any) => {
-            const rawTitle = item.titleNoFormatting || "";
+            // 💡 [수정] 원본 보존: title 속성을 가져옵니다.
+            const rawTitle = item.titleNoFormatting || item.title || "";
             
-            // 💡 [요구사항] (9/9~9/13) 형태의 시작일~종료일 패턴 확인
-            const dateMatch = rawTitle.match(/\(\s*\d{1,2}\s*[/.]\s*\d{1,2}\s*[~-]\s*(\d{1,2})\s*[/.]\s*(\d{1,2})\s*\)/);
+            // 💡 [수정] 제목 안에 9/9 ~ 9/13 형태의 날짜 범위 패턴 매칭 (종료 월/일은 그룹 1, 그룹 2)
+            const dateMatch = rawTitle.match(/\d{1,2}\s*[/.]\s*\d{1,2}\s*[~-]\s*(\d{1,2})\s*[/.]\s*(\d{1,2})/);
             
+            // 날짜 범위가 발견된 경우만 처리
             if (dateMatch) {
                 const title = `[네이버페이 app] ${rawTitle}`;
                 const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
                 
-                // 정규식 그룹 1과 그룹 2로 종료일 추출 설정
+                // 종료 날짜 추출
                 const month = parseInt(dateMatch[1], 10);
                 const day = parseInt(dateMatch[2], 10);
                 let year = new Date().getFullYear();
@@ -326,7 +328,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 2. 버거킹
+  // ✨ 2. 버거킹 (수정: 실제 제목이 존재하고 프로모션 단어 포함 시 제목 획득)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
@@ -355,18 +357,24 @@ export async function GET() {
             return found;
         }
 
+        // 💡 [수정] 복잡한 전체 검색 제외, 해당 오브젝트에 진짜 제목이 있고 덩어리에 프로모션이 포함 시 획득
         const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
         
-        if (actualTitle && typeof actualTitle === 'string' && actualTitle.includes('프로모션')) {
-            found.push({ 
-              title: actualTitle, 
-              raw: obj 
-            });
-        } else {
-            for (const key in obj) {
+        if (actualTitle && typeof actualTitle === 'string' && actualTitle.length > 2 && !actualTitle.includes('http')) {
+            if (JSON.stringify(obj).includes('프로모션')) {
+                found.push({ 
+                  title: actualTitle, 
+                  raw: obj 
+                });
+            }
+        }
+        
+        for (const key in obj) {
+            if (typeof obj[key] === 'object') {
               found = found.concat(findBkEvents(obj[key]));
             }
         }
+        
         return found;
     };
 
@@ -649,7 +657,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 7. 파리바게뜨
+  // ✨ 7. 파리바게뜨 (수정: 오직 사용자가 지정한 키워드 5개만 검사)
   // ====================================================================
   try {
     const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
@@ -665,6 +673,7 @@ export async function GET() {
           }
       });
 
+      // 💡 [수정] 오직 '혜택', '증정', '천원', '만원', '00원' 키워드만 엄격하게 검사
       const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
 
       if (rawText.length > 5 && rawText.length < 500 && hasKeyword) {
@@ -698,10 +707,10 @@ export async function GET() {
 
       const rawLink = $(element).find('a').attr('href') || $(element).attr('href') || "";
       
+      // 💡 [수정] 오직 '혜택', '증정', '천원', '만원', '00원' 키워드만 엄격하게 검사
       const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
-      const isPastPromo = rawText.includes('지난 프로모션') || rawText.includes('지난프로모션') || rawText.includes('종료');
 
-      if (rawText.length > 5 && rawText.length < 500 && hasKeyword && !rawText.includes('로그인') && !isPastPromo) {
+      if (rawText.length > 5 && rawText.length < 500 && hasKeyword && !rawText.includes('로그인')) {
         let rawTitle = rawText;
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
