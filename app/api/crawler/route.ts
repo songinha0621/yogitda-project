@@ -264,7 +264,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (수정: 유연한 날짜 캡처 정규식)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (수술: 원본 제목에서 완벽하게 추출)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
@@ -282,11 +282,17 @@ export async function GET() {
     
     if (blogJson?.isSuccess && blogJson?.result?.items) {
         blogJson.result.items.forEach((item: any) => {
-            const rawTitle = item.titleNoFormatting || item.title || "";
+            // 💡 [수술] titleNoFormatting이 짤렸을 경우를 대비해, 짤림 없는 원본 title에서 태그만 제거하여 가져옵니다.
+            let rawTitle = "";
+            if (item.title) {
+                rawTitle = String(item.title).replace(/<[^>]*>?/g, '').replace(/&[^;]+;/g, '').trim();
+            } else if (item.titleNoFormatting) {
+                rawTitle = item.titleNoFormatting;
+            }
             
             if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
-                // 💡 [수정] 대표님 예시 (9/9~9/13) 처리. 괄호 유무 상관없이 하이픈/물결 뒤의 월, 일을 잡아냅니다!
-                const dateMatch = rawTitle.match(/[~-]\s*(?:202\d\s*[./\-년]\s*)?(\d{1,2})\s*[./\-월]\s*(\d{1,2})/);
+                // 💡 [수술] (9/9~9/13), 9.9 - 9.13 등 모든 패턴의 날짜에서 종료일(뒷부분)을 낚아채는 완벽한 정규식입니다.
+                const dateMatch = rawTitle.match(/\d{1,2}\s*[./\-월]\s*\d{1,2}\s*[일]?\s*[~-]\s*(\d{1,2})\s*[./\-월]\s*(\d{1,2})/);
                 
                 if (dateMatch) {
                     const title = `[네이버페이 app] ${rawTitle}`;
@@ -329,7 +335,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 2. 버거킹 (수정: 2세대 전 가장 완벽했던 로직으로 원상복구)
+  // ✨ 2. 버거킹 (수술: 모든 이벤트를 긁어온 후 프로모션 단어 포함 여부 확인)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
@@ -345,6 +351,7 @@ export async function GET() {
       validateStatus: () => true
     });
 
+    // 💡 [수술] 탐색 중단을 막기 위해 객체의 끝까지 내려가 모든 제목을 일단 수집합니다.
     const findBkEvents = (obj: any): any[] => {
         let found: any[] = [];
         if (!obj || typeof obj !== 'object') {
@@ -358,30 +365,28 @@ export async function GET() {
             return found;
         }
 
-        // 💡 [수정] 2세대 전 정상 작동했던 심플하고 강력한 로직으로 복구
         const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
         
         if (actualTitle && typeof actualTitle === 'string' && actualTitle.length > 2 && !actualTitle.includes('http')) {
-            // 이벤트 덩어리 자체에 프로모션이 포함되어 있으면 무조건 가져옵니다!
-            if (JSON.stringify(obj).includes('프로모션')) {
-                found.push({ 
-                  title: actualTitle, 
-                  raw: obj 
-                });
-            }
-        }
-        
-        for (const key in obj) {
-            if (typeof obj[key] === 'object') {
-                found = found.concat(findBkEvents(obj[key]));
+            found.push({ 
+              title: actualTitle, 
+              raw: obj 
+            });
+        } else {
+            for (const key in obj) {
+              found = found.concat(findBkEvents(obj[key]));
             }
         }
         
         return found;
     };
 
-    const bkEvents = findBkEvents(bkData);
-    const uniqueBk = Array.from(new Set(bkEvents.map(e => e.title))).map(t => bkEvents.find(e => e.title === t));
+    const allBkEvents = findBkEvents(bkData);
+    
+    // 💡 [수술] 모든 이벤트 중에서 이름에 "프로모션" 단어가 있는 것만 필터링합니다.
+    const validBkEvents = allBkEvents.filter(e => e.title.includes('프로모션'));
+    
+    const uniqueBk = Array.from(new Set(validBkEvents.map(e => e.title))).map(t => validBkEvents.find(e => e.title === t));
 
     uniqueBk.forEach((ev: any) => {
       let cleanTitle = ev.title.length > 30 ? ev.title.substring(0, 30) + "..." : ev.title;
@@ -659,17 +664,21 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 7. 파리바게뜨 (수술 완료: <a> 태그 핀셋 추출로 통짜 껍데기 버그 완벽 차단)
+  // ✨ 7. 파리바게뜨 (수술: a태그를 감싸는 카드 컨테이너를 타겟팅하여 텍스트 분리 차단)
   // ====================================================================
   try {
     const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
     const { data: pastParisHtml } = await axios.get(PAST_PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $past = cheerio.load(pastParisHtml);
     
-    // 💡 [수정] 통짜 껍데기를 버리고, 클릭이 가능한 진짜 이벤트 <a> 태그만 순회합니다.
-    $past('a').each((index, element) => {
-      const link = $past(element).attr('href') || "";
-      if (link === '#' || link.includes('cat=')) return; // 상단 메뉴 버튼(탭)은 무시
+    // 💡 [수술] <a> 태그만 순회하면 안에 있는 <p>를 못 잡을 수 있으므로 카드를 감싸는 li나 div를 잡습니다!
+    const seenLinks = new Set();
+    $past('li, article, div[class*="item"], div[class*="list"], div[class*="card"]').each((index, element) => {
+      const $a = $past(element).find('a').first();
+      const link = $a.attr('href') || $past(element).attr('href') || "";
+      
+      // 메뉴 버튼(href="#")이거나 이미 찾은 카드는 무시
+      if (!link || link === '#' || link.includes('cat=') || link.includes('login') || seenLinks.has(link)) return;
       
       let rawText = $past(element).text().replace(/\s+/g, ' ').trim();
       $past(element).find('img').each((i, img) => {
@@ -681,12 +690,13 @@ export async function GET() {
 
       const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => rawText.includes(k));
 
-      if (rawText.length > 5 && rawText.length < 300 && hasKeyword) {
+      if (rawText.length > 2 && rawText.length < 500 && hasKeyword) {
         let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
         }
         if (rawTitle.length > 2) {
+          seenLinks.add(link);
           pastParisTitles.push(`[파리바게뜨] ${rawTitle}`);
         }
       }
@@ -700,12 +710,16 @@ export async function GET() {
     const { data: parisHtml } = await axios.get(PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(parisHtml);
     
-    // 💡 [수정] 위와 똑같이 클릭 가능한 <a> 태그(카드 단위)만 순회하여 껍데기 방지!
-    $('a').each((index, element) => {
-      const link = $(element).attr('href') || "";
-      if (link === '#' || link.includes('cat=')) return; // 상단 메뉴 버튼 무시
+    const seenLinks = new Set();
+    $('li, article, div[class*="item"], div[class*="list"], div[class*="card"]').each((index, element) => {
+      const $a = $(element).find('a').first();
+      const link = $a.attr('href') || $(element).attr('href') || "";
+      
+      // 메뉴 버튼 무시 및 중복 긁기 방지
+      if (!link || link === '#' || link.includes('cat=') || link.includes('login') || seenLinks.has(link)) return;
       
       let rawText = $(element).text().replace(/\s+/g, ' ').trim();
+      
       $(element).find('img').each((i, img) => {
           const altText = $(img).attr('alt');
           if (altText) {
@@ -715,14 +729,15 @@ export async function GET() {
 
       const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => rawText.includes(k));
 
-      // 길이가 300자 이하인 진짜 카드 단위 이벤트만 쏙쏙 골라냄
-      if (rawText.length > 5 && rawText.length < 300 && hasKeyword) {
+      // 💡 [수술] 길이가 500자 이하인 진짜 카드 단위만 쏙쏙 뺍니다!
+      if (rawText.length > 2 && rawText.length < 500 && hasKeyword) {
         let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
         }
 
         if (rawTitle.length > 2) {
+          seenLinks.add(link);
           const title = `[파리바게뜨] ${rawTitle}`;
           
           const extractedDate = null;
