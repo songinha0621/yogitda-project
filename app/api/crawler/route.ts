@@ -264,7 +264,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (수정: 짤리지 않은 원본 제목에서 괄호 날짜 추출)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (수정: 텍스트 짤림 방지 및 느슨한 정규식 적용)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
@@ -282,14 +282,17 @@ export async function GET() {
     
     if (blogJson?.isSuccess && blogJson?.result?.items) {
         blogJson.result.items.forEach((item: any) => {
-            // 💡 [수정] 짤림 방지를 위해 item.title의 HTML 태그를 지우고 원본을 사용합니다.
-            let rawTitle = item.title ? String(item.title).replace(/<[^>]*>?/g, '') : (item.titleNoFormatting || "");
+            const rawTitle = item.titleNoFormatting || item.title || "";
             
             if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
-                // 💡 [수정] (9/9 ~ 9/13) 형태의 괄호 안 날짜 범위를 정확히 매칭합니다.
-                const dateMatch = rawTitle.match(/\(\s*\d{1,2}\s*[/.]\s*\d{1,2}\s*[~-]\s*(\d{1,2})\s*[/.]\s*(\d{1,2})\s*\)/);
+                // 💡 [수정] 제목이 "..."으로 잘렸을 경우를 대비해, 날짜 탐색은 내용(briefContents)까지 넓게 합쳐서 진행합니다.
+                const fullTextForDate = rawTitle + " " + (item.briefContents || "");
+                
+                // 💡 [수정] 괄호 유무에 상관없이 숫자/숫자 ~ 숫자/숫자 형태면 다 잡는 유연한 정규식입니다.
+                const dateMatch = fullTextForDate.match(/\d{1,2}\s*[./월]\s*\d{1,2}\s*[일]?\s*[~-]\s*(\d{1,2})\s*[./월]\s*(\d{1,2})\s*[일]?/);
                 
                 if (dateMatch) {
+                    // DB에 들어가는 제목은 깔끔한 원래 제목 사용
                     const title = `[네이버페이 app] ${rawTitle}`;
                     const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
                     
@@ -330,7 +333,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 2. 버거킹 (수정: 전체 JSON에서 '프로모션' 단어 스캔)
+  // ✨ 2. 버거킹 (수정: 유연한 필드 탐색으로 프로모션 단어 완벽 캐치)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
@@ -359,22 +362,31 @@ export async function GET() {
             return found;
         }
 
-        const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
+        // 💡 [수정] 정해진 필드명에 의존하지 않고, 진짜 제목을 유연하게 찾아냅니다.
+        let actualTitle = obj.subject || obj.event_nm || obj.title || obj.name || obj.eventTitle || obj.tit;
         
-        // 💡 [수정] 이벤트 객체 전체(JSON) 어딘가에 '프로모션'이 포함되어 있으면 진짜 제목을 추출합니다.
-        if (actualTitle && typeof actualTitle === 'string' && actualTitle.length > 2 && !actualTitle.includes('http')) {
-            if (JSON.stringify(obj).includes('프로모션')) {
-                found.push({ 
-                  title: actualTitle, 
-                  raw: obj 
-                });
+        if (!actualTitle) {
+            for (const key in obj) {
+                if (typeof obj[key] === 'string' && obj[key].length > 2 && obj[key].length < 100 && !obj[key].includes('http')) {
+                    if (key.toLowerCase().includes('tit') || key.toLowerCase().includes('name') || key.toLowerCase().includes('subj')) {
+                        actualTitle = obj[key]; 
+                        break;
+                    }
+                }
             }
+        }
+        
+        // 데이터 어딘가에 '프로모션'이라는 단어가 1개라도 포함되어 있으면 낚아챕니다.
+        if (actualTitle && JSON.stringify(obj).includes('프로모션')) {
+            found.push({ 
+              title: actualTitle, 
+              raw: obj 
+            });
         } else {
             for (const key in obj) {
               found = found.concat(findBkEvents(obj[key]));
             }
         }
-        
         return found;
     };
 
@@ -657,7 +669,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 7. 파리바게뜨 (수정: 과도한 지난 프로모션 차단 로직 삭제)
+  // ✨ 7. 파리바게뜨 (수정: 텍스트 한도 2000자로 늘림 & 유연한 키워드 매칭)
   // ====================================================================
   try {
     const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
@@ -673,10 +685,12 @@ export async function GET() {
           }
       });
 
-      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
+      // 💡 [수정] 00원 또는 00 원 띄어쓰기 패턴도 허용
+      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원') || rawText.includes('00 원');
 
-      if (rawText.length > 5 && rawText.length < 500 && hasKeyword) {
-        let rawTitle = rawText;
+      // 💡 [수정] 이미지 alt 텍스트가 긴 경우를 대비해 2000자까지 허용
+      if (rawText.length > 5 && rawText.length < 2000 && hasKeyword) {
+        let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
         }
@@ -706,11 +720,12 @@ export async function GET() {
 
       const rawLink = $(element).find('a').attr('href') || $(element).attr('href') || "";
       
-      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
+      // 💡 [수정] 00원 또는 00 원 허용
+      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원') || rawText.includes('00 원');
 
-      // 💡 [수정] 임의로 넣었던 isPastPromo 차단 로직을 삭제했습니다.
-      if (rawText.length > 5 && rawText.length < 500 && hasKeyword && !rawText.includes('로그인')) {
-        let rawTitle = rawText;
+      // 💡 [수정] 제한 2000자로 늘림
+      if (rawText.length > 5 && rawText.length < 2000 && hasKeyword && !rawText.includes('로그인')) {
+        let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
         }
