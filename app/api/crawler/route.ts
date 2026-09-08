@@ -102,6 +102,8 @@ export async function GET() {
   const scrapedDeals: any[] = [];  
   const liveTitlesBySubAndMall: Record<string, string[]> = {};
   
+  const pastParisTitles: string[] = [];
+  
   const addLiveTitle = (sub: string, mall: string, title: string) => {
     const key = `${sub}_${mall}`;
     if (!liveTitlesBySubAndMall[key]) {
@@ -262,7 +264,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 1-3. 네이버페이 [블로그 -> app]
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (요청 사항 반영)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
@@ -280,43 +282,41 @@ export async function GET() {
     
     if (blogJson?.isSuccess && blogJson?.result?.items) {
         blogJson.result.items.forEach((item: any) => {
-            const rawTitle = item.titleNoFormatting;
+            const rawTitle = item.titleNoFormatting || "";
             
-            if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
-                const titleDateMatch = rawTitle.match(/[\(\[].*?[~-]\s*(?:202\d[./\-년\s]+)?(\d{1,2})[./\-월]+(\d{1,2})[일\s]*[\)\]]/);
+            // 💡 [요구사항] (9/9~9/13) 형태의 시작일~종료일 패턴 확인
+            const dateMatch = rawTitle.match(/\(\s*\d{1,2}\s*[/.]\s*\d{1,2}\s*[~-]\s*(\d{1,2})\s*[/.]\s*(\d{1,2})\s*\)/);
+            
+            if (dateMatch) {
+                const title = `[네이버페이 app] ${rawTitle}`;
+                const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
                 
-                if (titleDateMatch) {
-                    const title = `[네이버페이 app] ${rawTitle}`;
-                    const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
-                    
-                    let year = new Date().getFullYear();
-                    const month = parseInt(titleDateMatch[1], 10);
-                    const day = parseInt(titleDateMatch[2], 10);
-                    
-                    if (new Date().getMonth() + 1 >= 11 && month <= 2) {
-                        year += 1;
-                    }
-                    
-                    const extractedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    
-                    if (!isPast(extractedDate)) {
-                        addLiveTitle("네이버페이 app", "네이버페이", title);
-                        diagnostics.N_app++;
-                        
-                        if (!existingTitles.includes(title)) {
-                            scrapedDeals.push({
-                                title: title, 
-                                content: genericContent, 
-                                url: link, 
-                                category: "쇼핑", 
-                                sub_category: "네이버페이 app", 
-                                author: "AutoBot", 
-                                mall_name: "네이버페이", 
-                                status: "진행중", 
-                                end_date: extractedDate, 
-                            });
-                        }
-                    }
+                // 정규식 그룹 1과 그룹 2로 종료일 추출 설정
+                const month = parseInt(dateMatch[1], 10);
+                const day = parseInt(dateMatch[2], 10);
+                let year = new Date().getFullYear();
+                
+                if (new Date().getMonth() + 1 >= 11 && month <= 2) {
+                    year += 1;
+                }
+                
+                const extractedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                
+                addLiveTitle("네이버페이 app", "네이버페이", title);
+                diagnostics.N_app++;
+                
+                if (!existingTitles.includes(title)) {
+                    scrapedDeals.push({
+                        title: title, 
+                        content: genericContent, 
+                        url: link, 
+                        category: "쇼핑", 
+                        sub_category: "네이버페이 app", 
+                        author: "AutoBot", 
+                        mall_name: "네이버페이", 
+                        status: "진행중", 
+                        end_date: extractedDate, 
+                    });
                 }
             }
         });
@@ -355,34 +355,11 @@ export async function GET() {
             return found;
         }
 
-        let hasPromo = false;
-        let titleCandidate = "";
+        const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
         
-        for (const key in obj) {
-            const val = obj[key];
-            if (typeof val === 'string') {
-                if (val.includes('프로모션')) {
-                  hasPromo = true;
-                }
-                if (key.toLowerCase().includes('name') || key.toLowerCase().includes('title') || key.toLowerCase().includes('subject') || key.includes('nm')) {
-                    if (val.includes('프로모션')) {
-                      titleCandidate = val;
-                    }
-                }
-            }
-        }
-        
-        if (hasPromo && !titleCandidate) {
-            for (const val of Object.values(obj)) {
-                if (typeof val === 'string' && val.includes('프로모션') && val.length < 50) {
-                  titleCandidate = val;
-                }
-            }
-        }
-
-        if (hasPromo && titleCandidate) {
+        if (actualTitle && typeof actualTitle === 'string' && actualTitle.includes('프로모션')) {
             found.push({ 
-              title: titleCandidate, 
+              title: actualTitle, 
               raw: obj 
             });
         } else {
@@ -675,6 +652,36 @@ export async function GET() {
   // 7. 파리바게뜨
   // ====================================================================
   try {
+    const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
+    const { data: pastParisHtml } = await axios.get(PAST_PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const $past = cheerio.load(pastParisHtml);
+    
+    $past('li, article, div[class*="item"], div[class*="list"], a[href*="promo"], a[href*="event"]').each((index, element) => {
+      let rawText = $past(element).text().replace(/\s+/g, ' ').trim();
+      $past(element).find('img').each((i, img) => {
+          const altText = $past(img).attr('alt');
+          if (altText) {
+            rawText += " " + altText;
+          }
+      });
+
+      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
+
+      if (rawText.length > 5 && rawText.length < 500 && hasKeyword) {
+        let rawTitle = rawText;
+        if (rawTitle.length > 45) {
+          rawTitle = rawTitle.substring(0, 45) + "..."; 
+        }
+        if (rawTitle.length > 2) {
+          pastParisTitles.push(`[파리바게뜨] ${rawTitle}`);
+        }
+      }
+    });
+  } catch (e: any) { 
+    errors.push(`[파리바게뜨 지난프로모션] ${e.message}`); 
+  }
+
+  try {
     const PARIS_URL = 'https://www.paris.co.kr/promotion/';
     const { data: parisHtml } = await axios.get(PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(parisHtml);
@@ -690,10 +697,11 @@ export async function GET() {
       });
 
       const rawLink = $(element).find('a').attr('href') || $(element).attr('href') || "";
-      const hasPrice = /[0-9,]+원/.test(rawText);
-      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('할인') || rawText.includes('프로모션') || hasPrice;
+      
+      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
+      const isPastPromo = rawText.includes('지난 프로모션') || rawText.includes('지난프로모션') || rawText.includes('종료');
 
-      if (rawText.length > 5 && rawText.length < 500 && hasKeyword && !rawText.includes('로그인')) {
+      if (rawText.length > 5 && rawText.length < 500 && hasKeyword && !rawText.includes('로그인') && !isPastPromo) {
         let rawTitle = rawText;
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
@@ -701,12 +709,13 @@ export async function GET() {
 
         if (rawTitle.length > 2) {
           const title = `[파리바게뜨] ${rawTitle}`;
-          const extractedDate = extractDate(rawText);
+          
+          const extractedDate = null;
           
           addLiveTitle("베이커리", "파리바게뜨", title);
           diagnostics.파리바게뜨++;
 
-          if (!existingTitles.includes(title) && !isPast(extractedDate)) {
+          if (!existingTitles.includes(title)) {
             let finalLink = PARIS_URL;
             if (rawLink && rawLink.length > 2) {
               finalLink = rawLink.startsWith('http') ? rawLink : new URL(rawLink, 'https://www.paris.co.kr').href;
@@ -732,7 +741,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 🚨 [핵심수정] 8. DB 저장 및 [기준 분리형] 마감 판정 로직
+  // 8. DB 저장 및 마감 판정 로직
   // ====================================================================
   let newCount = 0;
   try {
@@ -756,14 +765,12 @@ export async function GET() {
       const toStampEndDateAndFinish: number[] = [];
       const toDeleteIds: number[] = [];
 
-      // 라이브 스캔 검사를 진행할 '날짜가 불명확한' 타겟 몰 목록
       const liveScanTargets = ["트립닷컴", "호텔스닷컴", "마이리얼트립", "네이버페이 쿠폰"];
 
       allDeals.forEach((deal: any) => {
         let diffDays = 0;
         let hasDate = !!deal.end_date;
 
-        // 1. 공통: 날짜가 있다면 무조건 달력 기준으로 며칠 지났는지 계산
         if (hasDate) {
           const endDate = new Date(deal.end_date);
           endDate.setHours(0, 0, 0, 0);
@@ -772,13 +779,11 @@ export async function GET() {
           }
         }
 
-        // 이미 7일이 지났다면 영구 삭제 대기열로.
         if (hasDate && diffDays > 7) { 
           toDeleteIds.push(deal.id); 
           return; 
         }
 
-        // 이미 종료 처리된 건 스킵
         if (deal.status === '종료') {
           return;
         }
@@ -786,34 +791,31 @@ export async function GET() {
         let isZombieOrExpired = false;
         let needsDateStamp = false;
 
-        // -------------------------------------------------------------
-        // 🔥 크롤러 판정 기준 완벽 분리 구역
-        // -------------------------------------------------------------
-        
-        // [기준 A: 달력 기준] 네이버, 버거킹 등 명확히 종료일이 있는 애들
-        if (!liveScanTargets.includes(deal.mall_name) && !liveScanTargets.includes(deal.sub_category)) {
-          if (hasDate && diffDays > 0) {
-            isZombieOrExpired = true; // 날짜가 지났으면 묻지도 따지지도 않고 종료
+        if (deal.mall_name === '파리바게뜨') {
+          if (pastParisTitles.includes(deal.title)) {
+            isZombieOrExpired = true;
+            if (!hasDate) {
+              needsDateStamp = true;
+            }
           }
         } 
-        
-        // [기준 B: 라이브 스캔 기준] 트립닷컴 등 날짜가 애매해서 목록에 없으면 지워야 하는 애들
+        else if (!liveScanTargets.includes(deal.mall_name) && !liveScanTargets.includes(deal.sub_category)) {
+          if (hasDate && diffDays > 0) {
+            isZombieOrExpired = true; 
+          }
+        } 
         else {
           const key = `${deal.sub_category}_${deal.mall_name}`;
-          // 긁어온 데이터 목록이 존재하는데, 거기에 내 이름이 없다면?
           if (liveTitlesBySubAndMall[key] && liveTitlesBySubAndMall[key].length > 0) {
             if (!liveTitlesBySubAndMall[key].includes(deal.title)) {
               isZombieOrExpired = true; 
               if (!hasDate) {
-                needsDateStamp = true; // 날짜가 없었으니 오늘을 제삿날로 찍어줌
+                needsDateStamp = true; 
               }
             }
           }
         }
 
-        // -------------------------------------------------------------
-
-        // 처형 명단에 추가
         if (isZombieOrExpired) {
           if (needsDateStamp) {
             toStampEndDateAndFinish.push(deal.id);
@@ -823,7 +825,6 @@ export async function GET() {
         }
       });
 
-      // DB 업데이트 실행
       if (toDeleteIds.length > 0) {
         await supabase.from('deals').delete().in('id', toDeleteIds);
       }
@@ -840,7 +841,6 @@ export async function GET() {
       }
     }
     
-    // 부활 로직: 예전에 종료처리됐는데 오늘 다시 스캔에 잡히면 진행중으로 부활
     const allScrapedTitles = Object.values(liveTitlesBySubAndMall).flat();
     if (allScrapedTitles.length > 0) {
         await supabase.from('deals').update({ status: '진행중' }).in('title', allScrapedTitles).eq('status', '종료');
