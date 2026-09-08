@@ -264,7 +264,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (수술 완료: 완벽한 정규식 교체)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (수정: 유연한 날짜 캡처 정규식)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
@@ -285,16 +285,16 @@ export async function GET() {
             const rawTitle = item.titleNoFormatting || item.title || "";
             
             if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
-                // 💡 [수술] (9/9~9/13), 9/9 ~ 9/13, 9/9-9/13 등 모든 패턴의 종료일(마지막 숫자 두 개)을 낚아챕니다!
-                const dateMatch = rawTitle.match(/\d{1,2}\s*[./월]\s*\d{1,2}\s*[일]?\s*[~-]\s*(\d{1,2})\s*[./월]\s*(\d{1,2})\s*[일]?/);
+                // 💡 [수정] 대표님 예시 (9/9~9/13) 처리. 괄호 유무 상관없이 하이픈/물결 뒤의 월, 일을 잡아냅니다!
+                const dateMatch = rawTitle.match(/[~-]\s*(?:202\d\s*[./\-년]\s*)?(\d{1,2})\s*[./\-월]\s*(\d{1,2})/);
                 
                 if (dateMatch) {
                     const title = `[네이버페이 app] ${rawTitle}`;
                     const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
                     
-                    let year = new Date().getFullYear();
                     const month = parseInt(dateMatch[1], 10);
                     const day = parseInt(dateMatch[2], 10);
+                    let year = new Date().getFullYear();
                     
                     if (new Date().getMonth() + 1 >= 11 && month <= 2) {
                         year += 1;
@@ -329,7 +329,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 2. 버거킹 (수술 완료: 딥스캔 탐색 엔진 복구)
+  // ✨ 2. 버거킹 (수정: 2세대 전 가장 완벽했던 로직으로 원상복구)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
@@ -358,32 +358,22 @@ export async function GET() {
             return found;
         }
 
-        // 💡 [수술] 객체에 제목이 있든 없든, 무조건 하위 데이터를 전부 다 스캔합니다.
-        let actualTitle = obj.subject || obj.event_nm || obj.title || obj.name || obj.eventTitle || obj.tit || obj.event_name;
+        // 💡 [수정] 2세대 전 정상 작동했던 심플하고 강력한 로직으로 복구
+        const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
         
-        if (!actualTitle) {
-            for (const key in obj) {
-                if (typeof obj[key] === 'string' && obj[key].length > 2 && obj[key].length < 100 && !obj[key].includes('http')) {
-                    if (key.toLowerCase().includes('tit') || key.toLowerCase().includes('name') || key.toLowerCase().includes('subj')) {
-                        actualTitle = obj[key]; 
-                        break;
-                    }
-                }
+        if (actualTitle && typeof actualTitle === 'string' && actualTitle.length > 2 && !actualTitle.includes('http')) {
+            // 이벤트 덩어리 자체에 프로모션이 포함되어 있으면 무조건 가져옵니다!
+            if (JSON.stringify(obj).includes('프로모션')) {
+                found.push({ 
+                  title: actualTitle, 
+                  raw: obj 
+                });
             }
         }
         
-        // 제목이 찾아졌고, 데이터 어딘가에 '프로모션'이 적혀있다면 획득!
-        if (actualTitle && JSON.stringify(obj).includes('프로모션')) {
-            found.push({ 
-              title: actualTitle, 
-              raw: obj 
-            });
-        }
-        
-        // 위에서 추가했더라도, 객체 안의 자식들에게도 똑같이 끝까지 물고 늘어지며 스캔합니다. (루프 중단 버그 해결)
         for (const key in obj) {
             if (typeof obj[key] === 'object') {
-              found = found.concat(findBkEvents(obj[key]));
+                found = found.concat(findBkEvents(obj[key]));
             }
         }
         
@@ -669,14 +659,18 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 7. 파리바게뜨 (수술 완료: 5개 지정 키워드만 허용, 쓰레기 텍스트 완전 차단)
+  // ✨ 7. 파리바게뜨 (수술 완료: <a> 태그 핀셋 추출로 통짜 껍데기 버그 완벽 차단)
   // ====================================================================
   try {
     const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
     const { data: pastParisHtml } = await axios.get(PAST_PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $past = cheerio.load(pastParisHtml);
     
-    $past('li, article, div[class*="item"], div[class*="list"], a[href*="promo"], a[href*="event"]').each((index, element) => {
+    // 💡 [수정] 통짜 껍데기를 버리고, 클릭이 가능한 진짜 이벤트 <a> 태그만 순회합니다.
+    $past('a').each((index, element) => {
+      const link = $past(element).attr('href') || "";
+      if (link === '#' || link.includes('cat=')) return; // 상단 메뉴 버튼(탭)은 무시
+      
       let rawText = $past(element).text().replace(/\s+/g, ' ').trim();
       $past(element).find('img').each((i, img) => {
           const altText = $past(img).attr('alt');
@@ -685,10 +679,9 @@ export async function GET() {
           }
       });
 
-      // 💡 [수술] 대표님이 지정하신 딱 5개 키워드만 검사합니다!
-      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
+      const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => rawText.includes(k));
 
-      if (rawText.length > 5 && rawText.length < 2000 && hasKeyword) {
+      if (rawText.length > 5 && rawText.length < 300 && hasKeyword) {
         let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
@@ -707,9 +700,12 @@ export async function GET() {
     const { data: parisHtml } = await axios.get(PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $ = cheerio.load(parisHtml);
     
-    $('li, article, div[class*="item"], div[class*="list"], a[href*="promo"], a[href*="event"]').each((index, element) => {
-      let rawText = $(element).text().replace(/\s+/g, ' ').trim();
+    // 💡 [수정] 위와 똑같이 클릭 가능한 <a> 태그(카드 단위)만 순회하여 껍데기 방지!
+    $('a').each((index, element) => {
+      const link = $(element).attr('href') || "";
+      if (link === '#' || link.includes('cat=')) return; // 상단 메뉴 버튼 무시
       
+      let rawText = $(element).text().replace(/\s+/g, ' ').trim();
       $(element).find('img').each((i, img) => {
           const altText = $(img).attr('alt');
           if (altText) {
@@ -717,15 +713,10 @@ export async function GET() {
           }
       });
 
-      const rawLink = $(element).find('a').attr('href') || $(element).attr('href') || "";
-      
-      // 💡 [수술] 대표님이 지정하신 딱 5개 키워드만 엄격히 검사!
-      const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
+      const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => rawText.includes(k));
 
-      // 💡 [수술] 메뉴 버튼 이름인 "지난 프로모션" 텍스트나 "로그인" 문구가 통째로 잡히는 현상 원천 차단
-      const isPastPromoMenu = rawText === '지난 프로모션' || rawText === '프로모션' || rawText.includes('로그인');
-
-      if (rawText.length > 5 && rawText.length < 2000 && hasKeyword && !isPastPromoMenu) {
+      // 길이가 300자 이하인 진짜 카드 단위 이벤트만 쏙쏙 골라냄
+      if (rawText.length > 5 && rawText.length < 300 && hasKeyword) {
         let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
@@ -741,8 +732,8 @@ export async function GET() {
 
           if (!existingTitles.includes(title)) {
             let finalLink = PARIS_URL;
-            if (rawLink && rawLink.length > 2) {
-              finalLink = rawLink.startsWith('http') ? rawLink : new URL(rawLink, 'https://www.paris.co.kr').href;
+            if (link && link.length > 2) {
+              finalLink = link.startsWith('http') ? link : new URL(link, 'https://www.paris.co.kr').href;
             }
             
             scrapedDeals.push({
