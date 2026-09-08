@@ -264,7 +264,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (요청 사항 반영: 날짜 포함 제목 추출)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (수정: 짤리지 않은 원본 제목에서 괄호 날짜 추출)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
@@ -282,43 +282,45 @@ export async function GET() {
     
     if (blogJson?.isSuccess && blogJson?.result?.items) {
         blogJson.result.items.forEach((item: any) => {
-            // 💡 [수정] 원본 보존: title 속성을 가져옵니다.
-            const rawTitle = item.titleNoFormatting || item.title || "";
+            // 💡 [수정] 짤림 방지를 위해 item.title의 HTML 태그를 지우고 원본을 사용합니다.
+            let rawTitle = item.title ? String(item.title).replace(/<[^>]*>?/g, '') : (item.titleNoFormatting || "");
             
-            // 💡 [수정] 제목 안에 9/9 ~ 9/13 형태의 날짜 범위 패턴 매칭 (종료 월/일은 그룹 1, 그룹 2)
-            const dateMatch = rawTitle.match(/\d{1,2}\s*[/.]\s*\d{1,2}\s*[~-]\s*(\d{1,2})\s*[/.]\s*(\d{1,2})/);
-            
-            // 날짜 범위가 발견된 경우만 처리
-            if (dateMatch) {
-                const title = `[네이버페이 app] ${rawTitle}`;
-                const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
+            if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
+                // 💡 [수정] (9/9 ~ 9/13) 형태의 괄호 안 날짜 범위를 정확히 매칭합니다.
+                const dateMatch = rawTitle.match(/\(\s*\d{1,2}\s*[/.]\s*\d{1,2}\s*[~-]\s*(\d{1,2})\s*[/.]\s*(\d{1,2})\s*\)/);
                 
-                // 종료 날짜 추출
-                const month = parseInt(dateMatch[1], 10);
-                const day = parseInt(dateMatch[2], 10);
-                let year = new Date().getFullYear();
-                
-                if (new Date().getMonth() + 1 >= 11 && month <= 2) {
-                    year += 1;
-                }
-                
-                const extractedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                
-                addLiveTitle("네이버페이 app", "네이버페이", title);
-                diagnostics.N_app++;
-                
-                if (!existingTitles.includes(title)) {
-                    scrapedDeals.push({
-                        title: title, 
-                        content: genericContent, 
-                        url: link, 
-                        category: "쇼핑", 
-                        sub_category: "네이버페이 app", 
-                        author: "AutoBot", 
-                        mall_name: "네이버페이", 
-                        status: "진행중", 
-                        end_date: extractedDate, 
-                    });
+                if (dateMatch) {
+                    const title = `[네이버페이 app] ${rawTitle}`;
+                    const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
+                    
+                    let year = new Date().getFullYear();
+                    const month = parseInt(dateMatch[1], 10);
+                    const day = parseInt(dateMatch[2], 10);
+                    
+                    if (new Date().getMonth() + 1 >= 11 && month <= 2) {
+                        year += 1;
+                    }
+                    
+                    const extractedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    
+                    if (!isPast(extractedDate)) {
+                        addLiveTitle("네이버페이 app", "네이버페이", title);
+                        diagnostics.N_app++;
+                        
+                        if (!existingTitles.includes(title)) {
+                            scrapedDeals.push({
+                                title: title, 
+                                content: genericContent, 
+                                url: link, 
+                                category: "쇼핑", 
+                                sub_category: "네이버페이 app", 
+                                author: "AutoBot", 
+                                mall_name: "네이버페이", 
+                                status: "진행중", 
+                                end_date: extractedDate, 
+                            });
+                        }
+                    }
                 }
             }
         });
@@ -328,7 +330,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 2. 버거킹 (수정: 실제 제목이 존재하고 프로모션 단어 포함 시 제목 획득)
+  // ✨ 2. 버거킹 (수정: 전체 JSON에서 '프로모션' 단어 스캔)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
@@ -357,9 +359,9 @@ export async function GET() {
             return found;
         }
 
-        // 💡 [수정] 복잡한 전체 검색 제외, 해당 오브젝트에 진짜 제목이 있고 덩어리에 프로모션이 포함 시 획득
         const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
         
+        // 💡 [수정] 이벤트 객체 전체(JSON) 어딘가에 '프로모션'이 포함되어 있으면 진짜 제목을 추출합니다.
         if (actualTitle && typeof actualTitle === 'string' && actualTitle.length > 2 && !actualTitle.includes('http')) {
             if (JSON.stringify(obj).includes('프로모션')) {
                 found.push({ 
@@ -367,10 +369,8 @@ export async function GET() {
                   raw: obj 
                 });
             }
-        }
-        
-        for (const key in obj) {
-            if (typeof obj[key] === 'object') {
+        } else {
+            for (const key in obj) {
               found = found.concat(findBkEvents(obj[key]));
             }
         }
@@ -657,7 +657,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 7. 파리바게뜨 (수정: 오직 사용자가 지정한 키워드 5개만 검사)
+  // ✨ 7. 파리바게뜨 (수정: 과도한 지난 프로모션 차단 로직 삭제)
   // ====================================================================
   try {
     const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
@@ -673,7 +673,6 @@ export async function GET() {
           }
       });
 
-      // 💡 [수정] 오직 '혜택', '증정', '천원', '만원', '00원' 키워드만 엄격하게 검사
       const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
 
       if (rawText.length > 5 && rawText.length < 500 && hasKeyword) {
@@ -707,9 +706,9 @@ export async function GET() {
 
       const rawLink = $(element).find('a').attr('href') || $(element).attr('href') || "";
       
-      // 💡 [수정] 오직 '혜택', '증정', '천원', '만원', '00원' 키워드만 엄격하게 검사
       const hasKeyword = rawText.includes('혜택') || rawText.includes('증정') || rawText.includes('천원') || rawText.includes('만원') || rawText.includes('00원');
 
+      // 💡 [수정] 임의로 넣었던 isPastPromo 차단 로직을 삭제했습니다.
       if (rawText.length > 5 && rawText.length < 500 && hasKeyword && !rawText.includes('로그인')) {
         let rawTitle = rawText;
         if (rawTitle.length > 45) {
