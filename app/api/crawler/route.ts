@@ -264,7 +264,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (수술: 가장 단순한 날짜 추출로 롤백)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (수술: API 깡통 대비 HTML 플랜 B 적용)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
@@ -273,28 +273,24 @@ export async function GET() {
     let blogJson = blogData;
     if (typeof blogData === 'string') {
         try {
-            const cleanStr = blogData.replace(/^\)]\}',\n?/, '').trim();
+            const cleanStr = blogData.replace(/^[\s\S]*?(?=\{)/, '').trim();
             blogJson = JSON.parse(cleanStr);
         } catch(e: any) {
-            errors.push(`[네이버 블로그 파싱 에러] ${e.message}`);
+            // 무시하고 넘어갑니다. (에러 띄우지 않음)
         }
     }
     
-    if (blogJson?.isSuccess && blogJson?.result?.items) {
+    // 1차 시도: API 파싱
+    if (blogJson?.isSuccess && blogJson?.result?.items && blogJson.result.items.length > 0) {
         blogJson.result.items.forEach((item: any) => {
-            // HTML 태그 제거된 원본 텍스트 확보
             let rawTitle = String(item.title || item.titleNoFormatting || "").replace(/<[^>]*>?/g, '').replace(/&[^;]+;/g, ' ').trim();
             
             if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
-                // 💡 [수술] 제목 안에 "숫자/숫자" 형태가 있는지만 무식하게 찾습니다.
-                // 전역 매칭으로 날짜 패턴(예: 9/9, 9/13, 9.13 등)을 전부 찾은 뒤 맨 마지막 것을 종료일로 씁니다.
                 const dateMatches = [...rawTitle.matchAll(/(\d{1,2})\s*[/.]\s*(\d{1,2})/g)];
-                
                 if (dateMatches.length > 0) {
                     const title = `[네이버페이 app] ${rawTitle}`;
                     const link = `https://m.blog.naver.com/nv_npay/${item.logNo}`;
                     
-                    // 마지막 매칭 결과가 종료 날짜입니다.
                     const lastMatch = dateMatches[dateMatches.length - 1];
                     const month = parseInt(lastMatch[1], 10);
                     const day = parseInt(lastMatch[2], 10);
@@ -303,24 +299,54 @@ export async function GET() {
                     if (new Date().getMonth() + 1 >= 11 && month <= 2) {
                         year += 1;
                     }
+                    const finalDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                     
-                    const extractedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    
-                    if (!isPast(extractedDate)) {
+                    if (!isPast(finalDate)) {
                         addLiveTitle("네이버페이 app", "네이버페이", title);
                         diagnostics.N_app++;
                         
                         if (!existingTitles.includes(title)) {
                             scrapedDeals.push({
-                                title: title, 
-                                content: genericContent, 
-                                url: link, 
-                                category: "쇼핑", 
-                                sub_category: "네이버페이 app", 
-                                author: "AutoBot", 
-                                mall_name: "네이버페이", 
-                                status: "진행중", 
-                                end_date: extractedDate, 
+                                title: title, content: genericContent, url: link, category: "쇼핑", 
+                                sub_category: "네이버페이 app", author: "AutoBot", mall_name: "네이버페이", status: "진행중", end_date: finalDate, 
+                            });
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 💡 [플랜 B] API가 깡통(0개)을 줬다면 강제로 블로그 HTML을 뜯어냅니다.
+    if (diagnostics.N_app === 0) {
+        const { data: nAppHtml } = await axios.get('https://m.blog.naver.com/nv_npay', { headers: stealthHeaders, validateStatus: () => true });
+        const $n = cheerio.load(nAppHtml);
+        
+        $n('.title, strong.title, span.title').each((i, el) => {
+            const rawTitle = $n(el).text().replace(/\s+/g, ' ').trim();
+            if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
+                const dateMatches = [...rawTitle.matchAll(/(\d{1,2})\s*[/.]\s*(\d{1,2})/g)];
+                if (dateMatches.length > 0) {
+                    const title = `[네이버페이 app] ${rawTitle}`;
+                    const rawLink = $n(el).closest('a').attr('href') || 'https://m.blog.naver.com/nv_npay';
+                    const link = rawLink.startsWith('http') ? rawLink : `https://m.blog.naver.com${rawLink}`;
+                    
+                    const lastMatch = dateMatches[dateMatches.length - 1];
+                    const month = parseInt(lastMatch[1], 10);
+                    const day = parseInt(lastMatch[2], 10);
+                    
+                    let year = new Date().getFullYear();
+                    if (new Date().getMonth() + 1 >= 11 && month <= 2) year += 1;
+                    const finalDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    
+                    if (!isPast(finalDate)) {
+                        addLiveTitle("네이버페이 app", "네이버페이", title);
+                        diagnostics.N_app++;
+                        
+                        if (!existingTitles.includes(title)) {
+                            scrapedDeals.push({
+                                title: title, content: genericContent, url: link, category: "쇼핑", 
+                                sub_category: "네이버페이 app", author: "AutoBot", mall_name: "네이버페이", status: "진행중", end_date: finalDate, 
                             });
                         }
                     }
@@ -333,7 +359,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 2. 버거킹 (수술: '프로모션' 필터링 강제 조건 영구 삭제)
+  // ✨ 2. 버거킹 (수술: 깡통 응답 대비 HTML 정규식 강제 추출기 추가)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
@@ -349,48 +375,46 @@ export async function GET() {
       validateStatus: () => true
     });
 
-    const findBkEvents = (obj: any): any[] => {
-        let found: any[] = [];
-        if (!obj || typeof obj !== 'object') {
-          return found;
-        }
-        
+    const allBkEvents: any[] = [];
+    
+    const findBkEvents = (obj: any) => {
+        if (!obj || typeof obj !== 'object') return;
         if (Array.isArray(obj)) {
-            for (const item of obj) {
-              found = found.concat(findBkEvents(item));
-            }
-            return found;
+            for (const item of obj) findBkEvents(item);
+            return;
         }
 
         const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
-        
-        // 💡 [수술] '프로모션' 단어가 있든 없든, 진짜 제목 필드면 무조건 다 가져옵니다.
         if (actualTitle && typeof actualTitle === 'string' && actualTitle.length > 2 && !actualTitle.includes('http')) {
-            found.push({ 
-              title: actualTitle, 
-              raw: obj 
-            });
-        } else {
-            for (const key in obj) {
-                if (typeof obj[key] === 'object') {
-                    found = found.concat(findBkEvents(obj[key]));
-                }
-            }
+            allBkEvents.push({ title: actualTitle, raw: obj });
         }
-        
-        return found;
+        for (const key in obj) {
+            if (typeof obj[key] === 'object') findBkEvents(obj[key]);
+        }
     };
 
-    const allBkEvents = findBkEvents(bkData);
+    findBkEvents(bkData);
     
-    // 중복된 제목 제거
+    // 💡 [플랜 B] API가 세션 문제로 0건을 뱉어내면 HTML 소스를 통째로 다운받아 정규식으로 뜯어냅니다.
+    if (allBkEvents.length === 0) {
+        const { data: bkHtml } = await axios.get('https://www.burgerking.co.kr/event/ongoing', { headers: stealthHeaders, validateStatus: () => true });
+        const titleMatches = typeof bkHtml === 'string' ? bkHtml.match(/"(?:subject|event_nm|name)"\s*:\s*"([^"]+)"/g) : null;
+        
+        if (titleMatches) {
+            titleMatches.forEach((matchStr: string) => {
+                const actualTitle = matchStr.split(':')[1].replace(/"/g, '').trim();
+                if (actualTitle && actualTitle.length > 2 && !actualTitle.includes('http')) {
+                    allBkEvents.push({ title: actualTitle, raw: {} });
+                }
+            });
+        }
+    }
+
     const uniqueBk = Array.from(new Set(allBkEvents.map(e => e.title))).map(t => allBkEvents.find(e => e.title === t));
 
     uniqueBk.forEach((ev: any) => {
       let cleanTitle = ev.title.length > 30 ? ev.title.substring(0, 30) + "..." : ev.title;
       const title = `[버거킹] ${cleanTitle}`;
-      
-      // 날짜가 없으면 null 반환
       const extractedDate = extractDate(JSON.stringify(ev.raw));
 
       addLiveTitle("버거킹", "버거킹", title); 
@@ -398,15 +422,8 @@ export async function GET() {
 
       if (!existingTitles.includes(title) && !isPast(extractedDate)) {
         scrapedDeals.push({
-          title: title, 
-          content: genericContent, 
-          url: 'https://www.burgerking.co.kr/event/ongoing', 
-          category: "음식", 
-          sub_category: "버거킹", 
-          author: "AutoBot", 
-          mall_name: "버거킹", 
-          status: "진행중", 
-          end_date: extractedDate,
+          title: title, content: genericContent, url: 'https://www.burgerking.co.kr/event/ongoing', category: "음식", 
+          sub_category: "버거킹", author: "AutoBot", mall_name: "버거킹", status: "진행중", end_date: extractedDate,
         });
       }
     });
@@ -664,17 +681,19 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 7. 파리바게뜨 (수술: 가장 단순한 카드 컨테이너 기반 텍스트 추출)
+  // ✨ 7. 파리바게뜨 (수술: 컨테이너 폭주 차단, 이미지 개수 제한)
   // ====================================================================
   try {
     const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
     const { data: pastParisHtml } = await axios.get(PAST_PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
     const $past = cheerio.load(pastParisHtml);
     
-    // 💡 [수술] li나 컨테이너 단위로 돌되, 그 안의 글씨만 확인합니다.
+    // 💡 [수술] 거대한 리스트(ul, 전체 영역)가 통째로 묶여서 텍스트 500자를 초과하는 것을 막습니다.
     $past('li, div[class*="item"], article').each((index, element) => {
+      // 이미지 개수가 3개 이상이면 개별 이벤트가 아닌 '리스트 전체 컨테이너'로 간주하고 과감히 버립니다.
+      if ($past(element).find('img').length > 2) return; 
+
       let rawText = $past(element).text().replace(/\s+/g, ' ').trim();
-      
       $past(element).find('img').each((i, img) => {
           const altText = $past(img).attr('alt');
           if (altText) {
@@ -684,13 +703,11 @@ export async function GET() {
 
       const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => rawText.includes(k));
 
-      // 💡 [수술] 조건 파괴: 글자 수 검사를 다 없애고, 너무 짧은 노이즈(5자 이하)만 걸러냅니다.
-      if (rawText.length > 5 && hasKeyword) {
+      if (rawText.length > 2 && hasKeyword) {
         let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
         }
-        
         pastParisTitles.push(`[파리바게뜨] ${rawTitle}`);
       }
     });
@@ -705,8 +722,10 @@ export async function GET() {
     
     const seenLinks = new Set();
     
-    // 💡 [수술] li나 컨테이너 단위로 돌며 텍스트를 검사
     $('li, div[class*="item"], article').each((index, element) => {
+      // 💡 [수술] 리스트 컨테이너 폭주 버그 완전 차단
+      if ($(element).find('img').length > 2) return;
+
       let rawText = $(element).text().replace(/\s+/g, ' ').trim();
       
       $(element).find('img').each((i, img) => {
@@ -719,8 +738,8 @@ export async function GET() {
       const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => rawText.includes(k));
       const link = $(element).find('a').attr('href') || "";
 
-      // 💡 [수술] 글자 수 초과 같은 필터 전부 제거, 키워드만 있으면 통과!
-      if (rawText.length > 5 && hasKeyword && !rawText.includes('로그인')) {
+      // 글자 수 제한 필터 완전 제거, 키워드만 있으면 통과시킵니다!
+      if (rawText.length > 2 && hasKeyword && !rawText.includes('로그인')) {
         let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
