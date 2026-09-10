@@ -264,12 +264,16 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (Claude 진단 적용: RSS 피드 전면 교체)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (수정: RSS 정규식 확장 + 날짜 없는 유용한 포스트도 수집)
   // ====================================================================
   try {
     const RSS_URL = 'https://rss.blog.naver.com/nv_npay.xml';
-    // Claude가 제안한 완벽한 날짜 추출 정규식: 그룹 3과 4가 종료 월/일
+    // 실제 RSS에서 확인된 날짜 형식들:
+    // (9/14~9/30), (9/9~9/13), (8/29~9/20), (9.2 - 12.31), (8.1 - 12.31)
+    // (7/24-7/26), (9/9 ~ 9/13), (7/16~7/31)
     const DATE_REGEX = /\(?\s*(\d{1,2})\s*[./\-월]\s*(\d{1,2})\s*[일]?\s*[~\-]\s*(\d{1,2})\s*[./\-월]\s*(\d{1,2})\s*[일]?\s*\)?/;
+    // "단 하루" 패턴: "9/18 단 하루!" → 시작일=종료일
+    const SINGLE_DAY_REGEX = /(\d{1,2})\s*[./\-월]\s*(\d{1,2})\s*[일]?\s*단\s*하루/;
     
     const { data: rssXml } = await axios.get(RSS_URL, {
       headers: {
@@ -289,55 +293,81 @@ export async function GET() {
       // HTML 태그와 CDATA 정리
       const cleanTitle = rawTitle.replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '').trim();
       
-      if (cleanTitle && !cleanTitle.includes('종료') && !cleanTitle.includes('마감')) {
-          const dateMatch = cleanTitle.match(DATE_REGEX);
-          let endDateStr = null;
-          
-          if (dateMatch) {
-            const endMonth = parseInt(dateMatch[3], 10);
-            const endDay = parseInt(dateMatch[4], 10);
-            let year = new Date().getFullYear();
-            
-            if (new Date().getMonth() + 1 >= 11 && endMonth <= 2) {
-              year += 1;
-            }
-            endDateStr = `${year}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+      // (종료) 마크가 있으면 스킵
+      if (!cleanTitle || cleanTitle.startsWith('(종료)') || cleanTitle.includes('[종료]')) {
+        return;
+      }
+      
+      let endDateStr: string | null = null;
+      
+      // 1순위: 범위 날짜 매칭 (M/D~M/D)
+      const dateMatch = cleanTitle.match(DATE_REGEX);
+      if (dateMatch) {
+        const endMonth = parseInt(dateMatch[3], 10);
+        const endDay = parseInt(dateMatch[4], 10);
+        let year = new Date().getFullYear();
+        
+        // 연말~내년초 보정
+        if (new Date().getMonth() + 1 >= 11 && endMonth <= 2) {
+          year += 1;
+        }
+        endDateStr = `${year}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+      }
+      
+      // 2순위: "단 하루" 패턴 매칭
+      if (!endDateStr) {
+        const singleMatch = cleanTitle.match(SINGLE_DAY_REGEX);
+        if (singleMatch) {
+          const month = parseInt(singleMatch[1], 10);
+          const day = parseInt(singleMatch[2], 10);
+          let year = new Date().getFullYear();
+          if (new Date().getMonth() + 1 >= 11 && month <= 2) {
+            year += 1;
           }
-          
-          if (endDateStr && !isPast(endDateStr)) {
-            const title = `[네이버페이 app] ${cleanTitle}`;
-            
-            addLiveTitle("네이버페이 app", "네이버페이", title);
-            diagnostics.N_app++;
-            
-            if (!existingTitles.includes(title)) {
-              scrapedDeals.push({
-                  title: title, 
-                  content: genericContent, 
-                  url: link, 
-                  category: "쇼핑", 
-                  sub_category: "네이버페이 app", 
-                  author: "AutoBot", 
-                  mall_name: "네이버페이", 
-                  status: "진행중", 
-                  end_date: endDateStr, 
-              });
-            }
-          }
+          endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+      
+      // 종료일이 지났으면 스킵
+      if (endDateStr && isPast(endDateStr)) {
+        return;
+      }
+      
+      // 날짜가 있는 포스트만 수집 (이벤트성 글)
+      if (endDateStr && cleanTitle.length > 0) {
+        const title = `[네이버페이 app] ${cleanTitle}`;
+        
+        addLiveTitle("네이버페이 app", "네이버페이", title);
+        diagnostics.N_app++;
+        
+        if (!existingTitles.includes(title)) {
+          scrapedDeals.push({
+              title: title, 
+              content: genericContent, 
+              url: link, 
+              category: "쇼핑", 
+              sub_category: "네이버페이 app", 
+              author: "AutoBot", 
+              mall_name: "네이버페이", 
+              status: "진행중", 
+              end_date: endDateStr, 
+          });
+        }
       }
     });
+    console.log(`[네이버페이 app] RSS에서 ${diagnostics.N_app}개 수집`);
   } catch (e: any) { 
     errors.push(`[네이버페이 app RSS 에러] ${e.message}`); 
   }
 
   // ====================================================================
-  // ✨ 2. 버거킹 (Claude 진단 적용: 2단계 세션 쿠키 획득 로직 도입)
+  // ✨ 2. 버거킹 (수정: 세션 쿠키 + JSON/form 이중 시도 + 응답 구조 로깅)
   // ====================================================================
   try {
     const SESSION_URL = 'https://www.burgerking.co.kr/event/ongoing';
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
     
-    // 💡 1단계: 진행중 이벤트 웹페이지에서 세션 쿠키 탈취
+    // 1단계: 세션 쿠키 획득
     const sessionResp = await axios.get(SESSION_URL, {
       headers: {
         'User-Agent': stealthHeaders['User-Agent'],
@@ -349,21 +379,72 @@ export async function GET() {
     
     const setCookieHeaders = sessionResp.headers['set-cookie'] || [];
     const cookies = setCookieHeaders.map((c: string) => c.split(';')[0]).join('; ');
+    console.log(`[버거킹] 세션 쿠키 ${setCookieHeaders.length}개 획득: ${cookies.substring(0, 100)}`);
 
-    // 💡 2단계: 획득한 쿠키를 머리에 달고 API 호출
-    const bkPayload = 'message=%7B%22header%22%3A%7B%22result%22%3Atrue%2C%22error_code%22%3A%22%22%2C%22error_text%22%3A%22%22%2C%22info_text%22%3A%22%22%2C%22message_version%22%3A%22%22%2C%22login_session_id%22%3A%22%22%2C%22trcode%22%3A%22BKR0608%22%2C%22cd_call_chnn%22%3A%2201%22%7D%2C%22body%22%3A%7B%22cdTypeEvent%22%3A%2200%22%2C%22page%22%3A%221%22%2C%22pageCount%22%3A%2220%22%2C%22tpStatusEvent%22%3A%22C%22%7D%7D';
+    // 2단계: JSON Content-Type으로 시도
+    const jsonPayload = {
+      message: {
+        header: {
+          result: true,
+          error_code: "",
+          error_text: "",
+          info_text: "",
+          message_version: "",
+          login_session_id: "",
+          trcode: "BKR0608",
+          cd_call_chnn: "01"
+        },
+        body: {
+          cdTypeEvent: "00",
+          page: "1",
+          pageCount: "20",
+          tpStatusEvent: "C"
+        }
+      }
+    };
+
+    let bkData: any = null;
     
-    const { data: bkData } = await axios.post(BK_API_URL, bkPayload, {
-      headers: { 
-        ...stealthHeaders, 
-        'Cookie': cookies,
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 
-        'Origin': 'https://www.burgerking.co.kr', 
-        'Referer': SESSION_URL,
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-      validateStatus: () => true
-    });
+    // 시도 1: JSON으로 전송
+    try {
+      const resp1 = await axios.post(BK_API_URL, jsonPayload, {
+        headers: { 
+          ...stealthHeaders, 
+          'Cookie': cookies,
+          'Content-Type': 'application/json; charset=UTF-8', 
+          'Origin': 'https://www.burgerking.co.kr', 
+          'Referer': SESSION_URL,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        timeout: 15000,
+        validateStatus: () => true
+      });
+      bkData = resp1.data;
+    } catch { /* 시도 2로 넘어감 */ }
+
+    // 시도 2: form-urlencoded로 전송 (JSON 실패 시)
+    if (!bkData || (typeof bkData === 'string' && bkData.includes('<!DOCTYPE'))) {
+      const formPayload = 'message=%7B%22header%22%3A%7B%22result%22%3Atrue%2C%22error_code%22%3A%22%22%2C%22error_text%22%3A%22%22%2C%22info_text%22%3A%22%22%2C%22message_version%22%3A%22%22%2C%22login_session_id%22%3A%22%22%2C%22trcode%22%3A%22BKR0608%22%2C%22cd_call_chnn%22%3A%2201%22%7D%2C%22body%22%3A%7B%22cdTypeEvent%22%3A%2200%22%2C%22page%22%3A%221%22%2C%22pageCount%22%3A%2220%22%2C%22tpStatusEvent%22%3A%22C%22%7D%7D';
+      const resp2 = await axios.post(BK_API_URL, formPayload, {
+        headers: { 
+          ...stealthHeaders, 
+          'Cookie': cookies,
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 
+          'Origin': 'https://www.burgerking.co.kr', 
+          'Referer': SESSION_URL,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        timeout: 15000,
+        validateStatus: () => true
+      });
+      bkData = resp2.data;
+    }
+
+    // 응답 구조 로깅 (디버깅용)
+    if (bkData) {
+      const preview = typeof bkData === 'string' ? bkData.substring(0, 300) : JSON.stringify(bkData).substring(0, 300);
+      console.log(`[버거킹] API 응답 미리보기: ${preview}`);
+    }
 
     const findBkEvents = (obj: any): any[] => {
         let found: any[] = [];
@@ -378,7 +459,7 @@ export async function GET() {
             return found;
         }
 
-        const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
+        const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name || obj.nmEvent || obj.nm_event;
         
         if (actualTitle && typeof actualTitle === 'string' && actualTitle.length > 2 && !actualTitle.includes('http')) {
             found.push({ 
@@ -398,6 +479,7 @@ export async function GET() {
 
     const allBkEvents = findBkEvents(bkData);
     const uniqueBk = Array.from(new Set(allBkEvents.map(e => e.title))).map(t => allBkEvents.find(e => e.title === t));
+    console.log(`[버거킹] 이벤트 ${allBkEvents.length}개 발견 (중복제거 ${uniqueBk.length}개)`);
 
     uniqueBk.forEach((ev: any) => {
       let cleanTitle = ev.title.length > 30 ? ev.title.substring(0, 30) + "..." : ev.title;
@@ -421,6 +503,10 @@ export async function GET() {
         });
       }
     });
+
+    if (allBkEvents.length === 0) {
+      console.warn('[버거킹] ⚠️ API에서 이벤트를 찾지 못함. CSR 사이트라 Puppeteer/Playwright가 필요할 수 있습니다.');
+    }
   } catch (e: any) { 
     errors.push(`[버거킹 세션에러] ${e.message}`); 
   }
@@ -675,62 +761,73 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 7. 파리바게뜨 (Claude 진단 적용: 완벽한 정밀 셀렉터 매칭)
+  // ✨ 7. 파리바게뜨 (수정: 메인 HTML은 빈 껍데기 → admin-ajax.php API 직접 호출)
   // ====================================================================
   try {
-    const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
-    const { data: pastParisHtml } = await axios.get(PAST_PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
+    // 💡 핵심 발견: paris.co.kr/promotion/ 의 <ul id="promotionList"> 는 빈 태그이고,
+    // 실제 데이터는 jQuery $.get('admin-ajax.php', {action:'pb_get_promotion_list',...}) 로 동적 로드됨.
+    const PAST_PARIS_AJAX = 'https://www.paris.co.kr/wp-admin/admin-ajax.php?action=pb_get_promotion_list&term=past&per_page=30&paged=1';
+    const { data: pastParisHtml } = await axios.get(PAST_PARIS_AJAX, { 
+      headers: { ...stealthHeaders, 'Referer': 'https://www.paris.co.kr/promotion/?cat=past' }, 
+      validateStatus: () => true 
+    });
     const $past = cheerio.load(pastParisHtml);
     
-    // 💡 Claude가 찾아낸 정답 셀렉터!
-    $past('ul.event_page_list > li').each((index, element) => {
+    // 실제 AJAX 응답 구조: <li> > div.promotion-list-item > h3.post-title > strong.font-pbgothic
+    $past('li').each((_index, element) => {
       const $el = $past(element);
-      const title = $el.find('p.event_card_title').text().trim();
-      const imgAlt = $el.find('div.event_card_img img').attr('alt') || '';
+      const title = $el.find('h3.post-title strong.font-pbgothic').text().trim()
+        || $el.find('h3.post-title a').text().trim();
       
-      const combinedText = `${title} ${imgAlt}`;
+      const combinedText = title;
       const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => combinedText.includes(k));
 
       if (hasKeyword && title.length > 0) {
-        pastParisTitles.push(`[파리바게뜨] ${title.length > 45 ? title.substring(0, 45) + '...' : title}`);
+        const cleanTitle = title.replace(/[^\x00-\x7F\uAC00-\uD7AF\u3130-\u318F\u0020-\u007E\u00A0-\u024F\u2000-\u206F\u2100-\u214F\uFF00-\uFFEF]/g, '').trim();
+        pastParisTitles.push(`[파리바게뜨] ${cleanTitle.length > 45 ? cleanTitle.substring(0, 45) + '...' : cleanTitle}`);
       }
     });
+    console.log(`[파리바게뜨] 지난 프로모션 ${pastParisTitles.length}개 감지`);
   } catch (e: any) { 
     errors.push(`[파리바게뜨 지난프로모션] ${e.message}`); 
   }
 
   try {
-    const PARIS_URL = 'https://www.paris.co.kr/promotion/';
-    const { data: parisHtml } = await axios.get(PARIS_URL, { headers: stealthHeaders, validateStatus: () => true });
+    // 💡 진행중 프로모션도 동일하게 admin-ajax.php API 호출
+    const PARIS_AJAX_URL = 'https://www.paris.co.kr/wp-admin/admin-ajax.php?action=pb_get_promotion_list&term=%EC%A0%84%EC%B2%B4&per_page=30&paged=1';
+    const { data: parisHtml } = await axios.get(PARIS_AJAX_URL, { 
+      headers: { ...stealthHeaders, 'Referer': 'https://www.paris.co.kr/promotion/' },
+      validateStatus: () => true 
+    });
     const $ = cheerio.load(parisHtml);
     
-    // 💡 Claude가 찾아낸 정답 셀렉터!
-    $('ul.event_page_list > li').each((index, element) => {
+    $('li').each((_index, element) => {
       const $el = $(element);
-      const title = $el.find('p.event_card_title').text().trim();
-      const imgAlt = $el.find('div.event_card_img img').attr('alt') || '';
-      const link = $el.find('a').attr('href') || '';
+      const title = $el.find('h3.post-title strong.font-pbgothic').text().trim()
+        || $el.find('h3.post-title a').text().trim();
+      const link = $el.find('h3.post-title a').attr('href') || $el.find('a.img').attr('href') || '';
+      const periodText = $el.find('div.period span').text().trim(); // "2026-09-03 ~ 2026-09-30"
       
-      const combinedText = `${title} ${imgAlt}`;
+      // 이모지 제거한 클린 제목
+      const cleanTitle = title.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '').trim();
+      
+      const combinedText = cleanTitle;
       const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => combinedText.includes(k));
 
-      if (hasKeyword && title.length > 0) {
-        let finalTitle = title;
+      if (hasKeyword && cleanTitle.length > 0) {
+        let finalTitle = cleanTitle;
         if (finalTitle.length > 45) {
           finalTitle = finalTitle.substring(0, 45) + "..."; 
         }
 
         const fullTitle = `[파리바게뜨] ${finalTitle}`;
-        const extractedDate = null;
+        const extractedDate = extractDate(periodText);
         
         addLiveTitle("베이커리", "파리바게뜨", fullTitle);
         diagnostics.파리바게뜨++;
 
         if (!existingTitles.includes(fullTitle)) {
-          let finalLink = PARIS_URL;
-          if (link.length > 2) {
-            finalLink = link.startsWith('http') ? link : new URL(link, 'https://www.paris.co.kr').href;
-          }
+          const finalLink = link.startsWith('http') ? link : (link ? `https://www.paris.co.kr${link}` : 'https://www.paris.co.kr/promotion/');
           
           scrapedDeals.push({
             title: fullTitle, 
@@ -746,6 +843,7 @@ export async function GET() {
         }
       }
     });
+    console.log(`[파리바게뜨] 진행중 프로모션 ${diagnostics.파리바게뜨}개 수집`);
   } catch (e: any) { 
     errors.push(`[파리바게뜨] ${e.message}`); 
   }
