@@ -264,7 +264,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 1-3. 네이버페이 [블로그 -> app] (수술: 복잡한 정규식 제거, 만능 추출기 사용)
+  // ✨ 1-3. 네이버페이 [블로그 -> app] (수술: 복잡한 정규식 제거, extractDate로 원복)
   // ====================================================================
   try {
     const BLOG_API = 'https://m.blog.naver.com/api/blogs/nv_npay/post-list?categoryNo=0&itemCount=20&page=1';
@@ -282,15 +282,16 @@ export async function GET() {
     
     if (blogJson?.isSuccess && blogJson?.result?.items) {
         blogJson.result.items.forEach((item: any) => {
+            // 💡 [수술] 잘리지 않은 원본 제목만 확실하게 확보합니다.
             let rawTitle = "";
             if (item.title) {
-                rawTitle = String(item.title).replace(/<[^>]*>?/g, '').replace(/&[^;]+;/g, '').trim();
+                rawTitle = String(item.title).replace(/<[^>]*>?/g, '').replace(/&[^;]+;/g, ' ').trim();
             } else if (item.titleNoFormatting) {
                 rawTitle = item.titleNoFormatting;
             }
             
             if (rawTitle && !rawTitle.includes('종료') && !rawTitle.includes('마감')) {
-                // 💡 [수술] 대표님 지시대로 '제목에 포함된 날짜가 있으면 가져와'를 100% 따릅니다.
+                // 💡 [수술] 복잡한 정규식을 버리고 튼튼한 날짜 추출기를 바로 사용합니다. 범위형(~)일 경우 맨 마지막 날짜를 완벽하게 뽑습니다.
                 const extractedDate = extractDate(rawTitle);
                 
                 if (extractedDate) {
@@ -324,7 +325,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 2. 버거킹 (수술: 자폭 이중 필터링 제거)
+  // ✨ 2. 버거킹 (수술: 프로모션 단어 필터링 완전 삭제, 무조건 수집)
   // ====================================================================
   try {
     const BK_API_URL = 'https://www.burgerking.co.kr/burgerking/BKR0608.json';
@@ -355,13 +356,12 @@ export async function GET() {
 
         const actualTitle = obj.subject || obj.event_nm || obj.title || obj.name;
         
+        // 💡 [수술] 프로모션 단어 조건 삭제. 진짜 제목만 있으면 일단 전부 긁어옵니다.
         if (actualTitle && typeof actualTitle === 'string' && actualTitle.length > 2 && !actualTitle.includes('http')) {
-            if (JSON.stringify(obj).includes('프로모션')) {
-                found.push({ 
-                  title: actualTitle, 
-                  raw: obj 
-                });
-            }
+            found.push({ 
+              title: actualTitle, 
+              raw: obj 
+            });
         }
         
         for (const key in obj) {
@@ -375,13 +375,13 @@ export async function GET() {
 
     const allBkEvents = findBkEvents(bkData);
     
-    // 💡 [수술] 제목에 '프로모션'이 있어야만 가져오게 했던 바보 같은 중복 필터링(validBkEvents) 삭제.
+    // 중복 제거
     const uniqueBk = Array.from(new Set(allBkEvents.map(e => e.title))).map(t => allBkEvents.find(e => e.title === t));
 
     uniqueBk.forEach((ev: any) => {
       let cleanTitle = ev.title.length > 30 ? ev.title.substring(0, 30) + "..." : ev.title;
       const title = `[버거킹] ${cleanTitle}`;
-      const extractedDate = extractDate(JSON.stringify(ev.raw));
+      const extractedDate = extractDate(JSON.stringify(ev.raw)); // 날짜 필터링이 스스로 쓰레기값 정리 역할 수행
 
       addLiveTitle("버거킹", "버거킹", title); 
       diagnostics.버거킹++;
@@ -654,7 +654,7 @@ export async function GET() {
   }
 
   // ====================================================================
-  // ✨ 7. 파리바게뜨 (수술: 부모 영역까지 넓혀서 키워드 완벽 포착)
+  // ✨ 7. 파리바게뜨 (수술: a 태그 중심으로 안전한 부모 텍스트 병합)
   // ====================================================================
   try {
     const PAST_PARIS_URL = 'https://www.paris.co.kr/promotion/?cat=past';
@@ -666,7 +666,6 @@ export async function GET() {
       const link = $past(element).attr('href') || "";
       if (!link || link === '#' || link.includes('cat=') || link.includes('login') || seenPastLinks.has(link)) return;
       
-      // 💡 [수술] <a> 태그 속은 물론이고, 태그 바깥의 부모 영역(예: <li>) 글씨까지 다 긁어모읍니다!
       let rawText = $past(element).text().replace(/\s+/g, ' ').trim();
       $past(element).find('img').each((i, img) => {
           const altText = $past(img).attr('alt');
@@ -674,13 +673,16 @@ export async function GET() {
             rawText += " " + altText;
           }
       });
-      if (rawText.length < 5) {
-          rawText += " " + $past(element).parent().text().replace(/\s+/g, ' ').trim();
+      
+      // 💡 [수술] a 태그 바로 바깥에 있는 글씨를 가져오되, 길이를 200자로 엄격히 제한해 껍데기 텍스트 폭주를 막습니다.
+      const parentText = $past(element).parent().text().replace(/\s+/g, ' ').trim();
+      if (parentText.length < 200) {
+          rawText += " " + parentText;
       }
 
       const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => rawText.includes(k));
 
-      if (hasKeyword && rawText.length < 1000) {
+      if (hasKeyword && rawText.length > 2 && rawText.length < 500) {
         let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
@@ -703,23 +705,27 @@ export async function GET() {
     const seenLinks = new Set();
     $('a').each((index, element) => {
       const link = $(element).attr('href') || "";
+      
       if (!link || link === '#' || link.includes('cat=') || link.includes('login') || seenLinks.has(link)) return;
       
-      // 💡 [수술] 부모 영역 텍스트 포함
       let rawText = $(element).text().replace(/\s+/g, ' ').trim();
+      
       $(element).find('img').each((i, img) => {
           const altText = $(img).attr('alt');
           if (altText) {
             rawText += " " + altText;
           }
       });
-      if (rawText.length < 5) {
-          rawText += " " + $(element).parent().text().replace(/\s+/g, ' ').trim();
+      
+      // 💡 [수술] 부모 영역 텍스트를 200자로 컷트
+      const parentText = $(element).parent().text().replace(/\s+/g, ' ').trim();
+      if (parentText.length < 200) {
+          rawText += " " + parentText;
       }
 
       const hasKeyword = ['혜택', '증정', '천원', '만원', '00원'].some(k => rawText.includes(k));
 
-      if (hasKeyword && rawText.length < 1000) {
+      if (hasKeyword && rawText.length > 2 && rawText.length < 500) {
         let rawTitle = rawText.replace(/\s+/g, ' ').trim();
         if (rawTitle.length > 45) {
           rawTitle = rawTitle.substring(0, 45) + "..."; 
