@@ -512,37 +512,61 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 3. 통신사 SKT 
+  // 3. 통신사 SKT (⚠️ 기존 URL 404 → T월드 API 시도)
   // ====================================================================
   try {
-    const TELECOM_URL = 'https://www.sktmembership.co.kr/epass/html/evt/event_list.jsp';
-    const { data: telecomHtml } = await axios.get(TELECOM_URL, { headers: stealthHeaders, validateStatus: () => true });
-    const $ = cheerio.load(telecomHtml);
+    // 기존 sktmembership.co.kr 은 2026년 기준 404 반환 (T월드로 통합)
+    // T월드 혜택 이벤트 API 시도
+    const TELECOM_URLS = [
+      'https://www.tworld.co.kr/web/benefit/event',
+      'https://www.tworld.co.kr/poc/benefit/membership',
+    ];
     
-    $('.event_list_wrap ul li').each((index, element) => {
-      const rawTitle = $(element).find('dt').text().trim();
-      const rawDateText = $(element).find('.date').text().trim() || $(element).text(); 
-      if (rawTitle) {
-        const title = `[T멤버십] ${rawTitle}`;
-        const extractedDate = extractDate(rawDateText);
-        addLiveTitle("통신사혜택", "SKT", title);
-        diagnostics.SKT++;
+    let sktSuccess = false;
+    for (const url of TELECOM_URLS) {
+      try {
+        const { data: telecomHtml, status } = await axios.get(url, { 
+          headers: stealthHeaders, 
+          timeout: 10000,
+          validateStatus: () => true 
+        });
+        
+        if (status === 200 && typeof telecomHtml === 'string' && !telecomHtml.includes('찾을 수가 없습니다')) {
+          const $ = cheerio.load(telecomHtml);
+          
+          // 다양한 셀렉터 시도
+          $('[class*="event"] li, [class*="benefit"] li, [class*="list"] a[href*="event"]').each((_index, element) => {
+            const rawTitle = $(element).find('dt, .tit, .title, strong, h3').first().text().trim()
+              || $(element).text().replace(/\s+/g, ' ').trim().substring(0, 50);
+            const rawDateText = $(element).find('.date, .period').text().trim() || $(element).text(); 
+            if (rawTitle && rawTitle.length > 3 && rawTitle.length < 100) {
+              const title = `[T멤버십] ${rawTitle.substring(0, 40)}`;
+              const extractedDate = extractDate(rawDateText);
+              addLiveTitle("통신사혜택", "SKT", title);
+              diagnostics.SKT++;
 
-        if (!existingTitles.includes(title) && !isPast(extractedDate)) {
-          scrapedDeals.push({ 
-            title: title, 
-            content: genericContent, 
-            url: "https://sktmembership.co.kr", 
-            category: "쇼핑", 
-            sub_category: "통신사혜택", 
-            author: "AutoBot", 
-            mall_name: "SKT", 
-            status: "진행중", 
-            end_date: extractedDate 
+              if (!existingTitles.includes(title) && !isPast(extractedDate)) {
+                scrapedDeals.push({ 
+                  title: title, 
+                  content: genericContent, 
+                  url: url, 
+                  category: "쇼핑", 
+                  sub_category: "통신사혜택", 
+                  author: "AutoBot", 
+                  mall_name: "SKT", 
+                  status: "진행중", 
+                  end_date: extractedDate 
+                });
+              }
+            }
           });
+          if (diagnostics.SKT > 0) { sktSuccess = true; break; }
         }
-      }
-    });
+      } catch { /* 다음 URL 시도 */ }
+    }
+    if (!sktSuccess) {
+      console.warn('[SKT] ⚠️ T월드 사이트 개편으로 크롤링 불가. URL 업데이트 필요.');
+    }
   } catch (e: any) { 
     errors.push(`[SKT] ${e.message}`); 
   }
@@ -550,49 +574,80 @@ export async function GET() {
   // ====================================================================
   // 4. 여행 3사 
   // ====================================================================
+  // ✨ 트립닷컴 (수정: __NEXT_DATA__ JSON에서 adsList 파싱)
   try {
     const TRIP_URL = 'https://kr.trip.com/sale/deals/';
     const { data: tripHtml } = await axios.get(TRIP_URL, { headers: stealthHeaders, validateStatus: () => true });
-    const $ = cheerio.load(tripHtml);
+    const $trip = cheerio.load(tripHtml);
     
-    $('a[href*="/sale/"]').each((index, element) => {
-      const rawText = $(element).text().replace(/\s+/g, ' ').trim();
-      let link = $(element).attr('href');
-      
-      if (rawText && rawText.length > 5) {
-        const title = `[트립닷컴] ${rawText.substring(0, 40)}`;
-        const extractedDate = extractDate(rawText);
+    // __NEXT_DATA__에서 adsList를 파싱 (SSR 데이터)
+    const nextDataScript = $trip('#__NEXT_DATA__').html();
+    if (nextDataScript) {
+      try {
+        const nextData = JSON.parse(nextDataScript);
+        const adsList = nextData?.props?.pageProps?.initialState?.adsData?.adsList || [];
+        console.log(`[트립닷컴] __NEXT_DATA__에서 ${adsList.length}개 딜 발견`);
         
-        addLiveTitle("숙박/호텔", "트립닷컴", title);
-        diagnostics.트립닷컴++;
+        adsList.forEach((ad: any) => {
+          const rawTitle = ad.title || '';
+          const desc = ad.introduction || '';
+          const link = ad.pageLink || ad.canonicalUrl || TRIP_URL;
+          const endTime = ad.endTime || ''; // "2026-09-12 22:59:59"
+          
+          if (rawTitle && rawTitle.length > 2) {
+            const displayText = desc ? `${rawTitle} - ${desc}` : rawTitle;
+            const title = `[트립닷컴] ${displayText.substring(0, 40)}`;
+            
+            // endTime에서 날짜 추출
+            let extractedDate: string | null = null;
+            if (endTime) {
+              const dateMatch = endTime.match(/(\d{4})-(\d{2})-(\d{2})/);
+              if (dateMatch) {
+                extractedDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+              }
+            }
+            
+            addLiveTitle("숙박/호텔", "트립닷컴", title);
+            diagnostics.트립닷컴++;
 
-        if (!existingTitles.includes(title) && !isPast(extractedDate)) {
-          let finalLink = link;
-          if (link && !link.startsWith('http')) {
-            finalLink = `https://kr.trip.com${link}`;
+            if (!existingTitles.includes(title) && !isPast(extractedDate)) {
+              scrapedDeals.push({ 
+                title: title, 
+                content: genericContent, 
+                url: link, 
+                category: "여행", 
+                sub_category: "숙박/호텔", 
+                author: "AutoBot", 
+                mall_name: "트립닷컴", 
+                status: "진행중", 
+                end_date: extractedDate 
+              });
+            }
           }
-
-          scrapedDeals.push({ 
-            title: title, 
-            content: genericContent, 
-            url: finalLink, 
-            category: "여행", 
-            sub_category: "숙박/호텔", 
-            author: "AutoBot", 
-            mall_name: "트립닷컴", 
-            status: "진행중", 
-            end_date: extractedDate 
-          });
-        }
+        });
+      } catch (jsonErr: any) {
+        console.error(`[트립닷컴] JSON 파싱 실패: ${jsonErr.message}`);
       }
-    });
+    } else {
+      console.warn('[트립닷컴] __NEXT_DATA__ 스크립트를 찾을 수 없음');
+    }
+    console.log(`[트립닷컴] 총 ${diagnostics.트립닷컴}개 수집`);
   } catch (e: any) { 
     errors.push(`[트립닷컴] ${e.message}`); 
   }
 
   try {
     const HOTELS_URL = 'https://kr.hotels.com/hotel-deals/';
-    const { data: hotelsHtml } = await axios.get(HOTELS_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const { data: hotelsHtml, status: hotelsStatus } = await axios.get(HOTELS_URL, { 
+      headers: stealthHeaders, 
+      timeout: 15000,
+      validateStatus: () => true 
+    });
+    
+    if (hotelsStatus !== 200) {
+      console.warn(`[호텔스닷컴] ⚠️ HTTP ${hotelsStatus} 응답 (봇 차단 가능성)`);
+    }
+    
     const $ = cheerio.load(hotelsHtml);
     
     $('h2, h3, .offer-card-title, .title').each((index, element) => {
@@ -633,41 +688,66 @@ export async function GET() {
 
   try {
     const MRT_URL = 'https://www.myrealtrip.com/promotions';
-    const { data: mrtHtml } = await axios.get(MRT_URL, { headers: stealthHeaders, validateStatus: () => true });
-    const $ = cheerio.load(mrtHtml);
+    const { data: mrtHtml } = await axios.get(MRT_URL, { headers: stealthHeaders, timeout: 15000, validateStatus: () => true });
+    const $mrt = cheerio.load(mrtHtml);
     
-    $('.promotion-item, a[href*="/promotions/"]').each((index, element) => {
-      const rawTitle = $(element).find('.title, h3, p').first().text().trim() || $(element).text().trim();
-      const rawDateText = $(element).find('.date, .period').text().trim() || $(element).text();
-      let link = $(element).attr('href') || $(element).closest('a').attr('href');
-      
-      if (rawTitle && rawTitle.length > 5) {
-        const title = `[마이리얼트립] ${rawTitle}`;
-        const extractedDate = extractDate(rawDateText);
-        
-        addLiveTitle("액티비티/렌트", "마이리얼트립", title);
-        diagnostics.마이리얼트립++;
-
-        if (!existingTitles.includes(title) && !isPast(extractedDate)) {
-          let finalLink = link;
-          if (link && !link.startsWith('http')) {
-            finalLink = `https://www.myrealtrip.com${link}`;
+    // 마이리얼트립은 CSR이지만 __NEXT_DATA__가 있을 수 있음
+    const mrtNextData = $mrt('#__NEXT_DATA__').html();
+    if (mrtNextData) {
+      try {
+        const parsed = JSON.parse(mrtNextData);
+        // JSON 구조에서 프로모션 데이터를 재귀적으로 탐색
+        const findPromos = (obj: any, results: any[] = []): any[] => {
+          if (!obj || typeof obj !== 'object') return results;
+          if (Array.isArray(obj)) { obj.forEach(item => findPromos(item, results)); return results; }
+          if (obj.title && (obj.imageUrl || obj.image || obj.bannerUrl)) {
+            results.push(obj);
+          } else {
+            Object.values(obj).forEach(v => findPromos(v, results));
           }
+          return results;
+        };
+        const promos = findPromos(parsed);
+        promos.forEach((p: any) => {
+          const rawTitle = p.title || p.name || '';
+          if (rawTitle && rawTitle.length > 3) {
+            const title = `[마이리얼트립] ${rawTitle.substring(0, 40)}`;
+            const link = p.link || p.url || p.href || MRT_URL;
+            addLiveTitle("액티비티/렌트", "마이리얼트립", title);
+            diagnostics.마이리얼트립++;
+            if (!existingTitles.includes(title)) {
+              scrapedDeals.push({ title, content: genericContent, url: link.startsWith('http') ? link : `https://www.myrealtrip.com${link}`, category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", end_date: null });
+            }
+          }
+        });
+      } catch { /* JSON 파싱 실패 */ }
+    }
+    
+    // 기존 셀렉터도 시도
+    if (diagnostics.마이리얼트립 === 0) {
+      $mrt('.promotion-item, a[href*="/promotions/"]').each((_index, element) => {
+        const rawTitle = $mrt(element).find('.title, h3, p').first().text().trim() || $mrt(element).text().trim();
+        let link = $mrt(element).attr('href') || $mrt(element).closest('a').attr('href');
+        
+        if (rawTitle && rawTitle.length > 5 && rawTitle.length < 100) {
+          const title = `[마이리얼트립] ${rawTitle.substring(0, 40)}`;
+          addLiveTitle("액티비티/렌트", "마이리얼트립", title);
+          diagnostics.마이리얼트립++;
 
-          scrapedDeals.push({ 
-            title: title, 
-            content: genericContent, 
-            url: finalLink, 
-            category: "여행", 
-            sub_category: "액티비티/렌트", 
-            author: "AutoBot", 
-            mall_name: "마이리얼트립", 
-            status: "진행중", 
-            end_date: extractedDate 
-          });
+          if (!existingTitles.includes(title)) {
+            let finalLink = link;
+            if (link && !link.startsWith('http')) { finalLink = `https://www.myrealtrip.com${link}`; }
+            scrapedDeals.push({ title, content: genericContent, url: finalLink || MRT_URL, category: "여행", sub_category: "액티비티/렌트", author: "AutoBot", mall_name: "마이리얼트립", status: "진행중", end_date: null });
+          }
         }
-      }
-    });
+      });
+    }
+    
+    if (diagnostics.마이리얼트립 === 0) {
+      console.warn('[마이리얼트립] ⚠️ CSR 사이트라 데이터 추출 불가. Puppeteer가 필요할 수 있습니다.');
+    } else {
+      console.log(`[마이리얼트립] ${diagnostics.마이리얼트립}개 수집`);
+    }
   } catch (e: any) { 
     errors.push(`[마이리얼트립] ${e.message}`); 
   }
@@ -712,35 +792,53 @@ export async function GET() {
         }
       }
     });
+    if (diagnostics.CU === 0) {
+      console.warn('[CU] ⚠️ 이벤트 목록이 AJAX로 로드됨 (brand_news div 비어있음). 정적 HTML에서 데이터 없음.');
+    } else {
+      console.log(`[CU] ${diagnostics.CU}개 수집`);
+    }
   } catch (e: any) { 
     errors.push(`[CU] ${e.message}`); 
   }
 
   // ====================================================================
-  // 6. 도미노피자 
+  // 6. 도미노피자 (수정: euc-kr 인코딩 + menu-list > a > img alt 셀렉터)
   // ====================================================================
   try {
     const DOMINO_URL = 'https://web.dominos.co.kr/event/list?gubun=E0200';
-    const { data: dominoHtml } = await axios.get(DOMINO_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const { data: dominoBuffer } = await axios.get(DOMINO_URL, { 
+      headers: stealthHeaders, 
+      responseType: 'arraybuffer', // euc-kr 대응
+      validateStatus: () => true 
+    });
+    
+    // euc-kr → utf-8 디코딩
+    let dominoHtml: string;
+    try {
+      const iconv = require('iconv-lite');
+      dominoHtml = iconv.decode(Buffer.from(dominoBuffer), 'euc-kr');
+    } catch {
+      // iconv-lite가 없으면 TextDecoder로 시도
+      dominoHtml = new TextDecoder('euc-kr').decode(dominoBuffer);
+    }
+    
     const $ = cheerio.load(dominoHtml);
     
-    $('.event_list_wrap li, .event-list li, article.event-list li').each((index, element) => {
-      const rawTitle = $(element).find('.tit, .subject, strong, p').first().text().trim();
-      const rawDateText = $(element).find('.date, .term, p.term').text().trim() || $(element).text();
-      const rawLink = $(element).find('a').attr('href');
+    // 실제 구조: div.menu-list > div.mb-50 > a[href="/event/viewHtml?seq=..."] > img[alt="이벤트제목"]
+    $('div.menu-list a[href*="/event/"]').each((_index, element) => {
+      const $el = $(element);
+      const imgAlt = $el.find('img').attr('alt') || $el.find('img').attr('data-alt') || '';
+      const link = $el.attr('href') || '';
+      const rawTitle = imgAlt.trim();
       
       if (rawTitle && rawTitle.length > 2) {
-        const title = `[도미노피자] ${rawTitle}`;
-        const extractedDate = extractDate(rawDateText);
+        const title = `[도미노피자] ${rawTitle.length > 35 ? rawTitle.substring(0, 35) + '...' : rawTitle}`;
         
         addLiveTitle("도미노피자", "도미노피자", title);
         diagnostics.도미노피자++;
 
-        if (!existingTitles.includes(title) && !isPast(extractedDate)) {
-          let finalLink = DOMINO_URL;
-          if (rawLink) {
-            finalLink = `https://web.dominos.co.kr${rawLink}`;
-          }
+        if (!existingTitles.includes(title)) {
+          const finalLink = link.startsWith('http') ? link : `https://web.dominos.co.kr${link.trim()}`;
 
           scrapedDeals.push({ 
             title: title, 
@@ -751,11 +849,12 @@ export async function GET() {
             author: "AutoBot", 
             mall_name: "도미노피자", 
             status: "진행중", 
-            end_date: extractedDate 
+            end_date: null, 
           });
         }
       }
     });
+    console.log(`[도미노피자] ${diagnostics.도미노피자}개 수집`);
   } catch (e: any) { 
     errors.push(`[도미노피자] ${e.message}`); 
   }
