@@ -806,29 +806,48 @@ export async function GET() {
   // ====================================================================
   try {
     const DOMINO_URL = 'https://web.dominos.co.kr/event/list?gubun=E0200';
-    const { data: dominoBuffer } = await axios.get(DOMINO_URL, { 
+    
+    // 방법 1: responseType text + latin1로 받은 뒤 Buffer 변환
+    const { data: dominoRaw, status: dominoStatus } = await axios.get(DOMINO_URL, { 
       headers: stealthHeaders, 
-      responseType: 'arraybuffer', // euc-kr 대응
+      responseType: 'arraybuffer',
+      timeout: 15000,
       validateStatus: () => true 
     });
     
-    // euc-kr → utf-8 디코딩
-    let dominoHtml: string;
+    console.log(`[도미노피자] HTTP ${dominoStatus}, 응답 크기: ${dominoRaw?.byteLength || 0} bytes`);
+    
+    // euc-kr → utf-8 디코딩 (여러 방법 시도)
+    let dominoHtml = '';
+    const buf = Buffer.from(dominoRaw);
     try {
-      const iconv = require('iconv-lite');
-      dominoHtml = iconv.decode(Buffer.from(dominoBuffer), 'euc-kr');
+      dominoHtml = new TextDecoder('euc-kr').decode(buf);
     } catch {
-      // iconv-lite가 없으면 TextDecoder로 시도
-      dominoHtml = new TextDecoder('euc-kr').decode(dominoBuffer);
+      try {
+        const iconv = require('iconv-lite');
+        dominoHtml = iconv.decode(buf, 'euc-kr');
+      } catch {
+        // 최후의 수단: latin1로 디코딩 (한글 깨지지만 href는 정상)
+        dominoHtml = buf.toString('latin1');
+        console.warn('[도미노피자] ⚠️ euc-kr 디코더 없음. 제목이 깨질 수 있음.');
+      }
     }
     
     const $ = cheerio.load(dominoHtml);
     
     // 실제 구조: div.menu-list > div.mb-50 > a[href="/event/viewHtml?seq=..."] > img[alt="이벤트제목"]
-    $('div.menu-list a[href*="/event/"]').each((_index, element) => {
+    // 또는 a[href*="/event/view"] 로 실제 이벤트만 매칭
+    const allDominoLinks = $('a[href*="/event/"]');
+    console.log(`[도미노피자] /event/ 링크 ${allDominoLinks.length}개 발견`);
+    
+    allDominoLinks.each((_index, element) => {
       const $el = $(element);
+      const link = ($el.attr('href') || '').trim();
+      
+      // 이벤트 상세 페이지 링크만 선택 (viewHtml, view 등)
+      if (!link.includes('view') && !link.includes('seq=')) return;
+      
       const imgAlt = $el.find('img').attr('alt') || $el.find('img').attr('data-alt') || '';
-      const link = $el.attr('href') || '';
       const rawTitle = imgAlt.trim();
       
       if (rawTitle && rawTitle.length > 2) {
