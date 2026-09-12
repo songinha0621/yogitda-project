@@ -154,8 +154,9 @@ export default function Home() {
           }
         }
 
-        const from = (currentPage - 1) * 8;
-        const to = from + 8 - 1;
+        // 💡 1페이지당 12개 출력
+        const from = (currentPage - 1) * 12;
+        const to = from + 12 - 1;
         query = query.range(from, to);
 
       } else if (focusPostId) {
@@ -219,8 +220,9 @@ export default function Home() {
 
         setPosts(mappedPosts);
         
+        // 💡 총 페이지 수도 12개 기준으로 계산
         if (CATEGORIES.includes(currentView) && !focusPostId && count !== null) {
-          setTotalPages(Math.ceil(count / 8) || 1);
+          setTotalPages(Math.ceil(count / 12) || 1);
         }
 
         setTimeout(() => {
@@ -837,7 +839,6 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* 💡 [원본 100% 복구] 원래 있던 직관적인 탭 UI 그대로 유지 */}
                 <div className="flex space-x-4 border-b border-slate-200 px-2">
                   <button 
                     onClick={() => { setCurrentTab("인기"); setCurrentPage(1); }} 
@@ -866,7 +867,6 @@ export default function Home() {
                     ))}
                   </div>
                   
-                  {/* 💡 [원본 100% 복구] 삭제되었던 셀렉트 박스 완벽하게 되살려둠 */}
                   {currentTab === "전체" && (
                     <div className="flex-shrink-0">
                       <select value={sortOption} onChange={(e) => { setSortOption(e.target.value); setCurrentPage(1); }} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none text-slate-600 shadow-sm cursor-pointer">
@@ -884,17 +884,17 @@ export default function Home() {
                   ) : posts.map(p => {
                     let isExp = false;
                     try { isExp = p.status === "종료" || (p.endDate && new Date(p.endDate) < new Date(new Date().setHours(0,0,0,0))); } catch(e) {}
-                    const expTag = (isExp && selectedSub !== "종료") ? <span className="text-red-500 font-bold mr-1.5">[종료]</span> : "";
+                    const expTag = (isExp && selectedSub !== "종료") ? <span className="text-red-500 font-bold mr-1.5">[종료]</span> : null;
                     
-                    let titleStr = `${expTag}${currentView==="핫딜 커뮤니티" && p.mallName ? `[${p.mallName}] ` : ""}${p.title}`;
-                    if (currentView === "핫딜 커뮤니티" && p.price) titleStr += ` (${p.price})`;
+                    let titleText = `${currentView==="핫딜 커뮤니티" && p.mallName ? `[${p.mallName}] ` : ""}${p.title}`;
+                    if (currentView === "핫딜 커뮤니티" && p.price) titleText += ` (${p.price})`;
                     
                     return (
                       <div key={p.id} className="hover:bg-slate-50/85 transition-colors border-b border-slate-100 last:border-none rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <span className="inline-block text-[11px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg mr-2 mb-1.5">{p.subCategory || "일반"}</span>
                           <button onClick={()=>handleViewPost(p.id, p.category)} className="text-sm font-bold text-slate-800 hover:text-blue-600 block text-left truncate w-full">
-                            {titleStr}{p.image || p.images?.length > 0 ? " 🖼️" : ""}
+                            {expTag}{titleText}{p.image || p.images?.length > 0 ? " 🖼️" : ""}
                           </button>
                         </div>
                         <div className="flex items-center text-xs text-slate-400 font-semibold gap-3 shrink-0 flex-wrap">
