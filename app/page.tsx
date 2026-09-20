@@ -121,7 +121,15 @@ export default function Home() {
 
       let query = supabase.from('deals').select('*', { count: 'exact' });
 
-      if (CATEGORIES.includes(currentView) && !focusPostId) {
+      if (currentView === "전체 검색" && activeSearch && !focusPostId) {
+        // 💡 전체 검색: 카테고리 무관 모든 글에서 키워드 검색
+        query = query.or(`title.ilike.%${activeSearch}%,content.ilike.%${activeSearch}%`);
+        query = query.order('id', { ascending: false });
+        const from = (currentPage - 1) * 12;
+        const to = from + 12 - 1;
+        query = query.range(from, to);
+
+      } else if (CATEGORIES.includes(currentView) && !focusPostId) {
         query = query.eq('category', currentView);
         const isClosable = !["공지사항", "요청"].includes(currentView);
         const todayStr = new Date().toISOString().split('T')[0];
@@ -221,7 +229,7 @@ export default function Home() {
         setPosts(mappedPosts);
         
         // 💡 총 페이지 수도 12개 기준으로 계산
-        if (CATEGORIES.includes(currentView) && !focusPostId && count !== null) {
+        if ((CATEGORIES.includes(currentView) || currentView === "전체 검색") && !focusPostId && count !== null) {
           setTotalPages(Math.ceil(count / 12) || 1);
         }
 
@@ -567,11 +575,19 @@ export default function Home() {
               <div className="w-full md:w-[350px] lg:w-[450px] h-[44px] md:mx-auto">
                 <input 
                   type="text" 
-                  placeholder="모든 핫딜과 페이백 검색 (엔터)" 
+                  placeholder="모든 핫딜과 페이백 통합 검색 (엔터)" 
                   value={searchQuery} 
                   onChange={(e) => setSearchQuery(e.target.value)} 
                   onKeyDown={(e) => { 
-                    if (e.key === 'Enter') { setActiveSearch(searchQuery); if(currentView === "로비") navigate("핫딜 커뮤니티"); } 
+                    if (e.key === 'Enter' && searchQuery.trim()) { 
+                      setActiveSearch(searchQuery.trim()); 
+                      setCurrentView("전체 검색"); 
+                      setFocusPostId(null); 
+                      setSelectedSub("전체"); 
+                      setCurrentPage(1); 
+                      window.scrollTo(0,0);
+                      if (typeof window !== "undefined") window.history.pushState({ view: "전체 검색" }, '', '/');
+                    } 
                   }} 
                   className="w-full h-full px-4 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:border-slate-400 transition-all text-sm shadow-sm" 
                 />
@@ -924,6 +940,93 @@ export default function Home() {
                        {pageNum}
                      </button>
                    ))}
+                </div>
+
+                {/* 💡 해당 탭/말머리 내 검색 (하단 소형 검색창) */}
+                <div className="mt-6 flex items-center gap-2 justify-center">
+                  <div className="flex gap-2 w-full max-w-md">
+                    <input 
+                      type="text" 
+                      placeholder={`[${currentView}${selectedSub !== "전체" ? ` > ${selectedSub}` : ""}] 내에서 검색`}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { setActiveSearch(searchQuery.trim()); setCurrentPage(1); }
+                      }}
+                      className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-400 transition-all"
+                    />
+                    <button 
+                      onClick={() => { setActiveSearch(searchQuery.trim()); setCurrentPage(1); }}
+                      className="px-4 py-2.5 bg-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-300 transition-colors shrink-0"
+                    >🔍</button>
+                    {activeSearch && (
+                      <button 
+                        onClick={() => { setActiveSearch(""); setSearchQuery(""); setCurrentPage(1); }}
+                        className="px-3 py-2.5 bg-red-50 text-red-500 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors shrink-0"
+                      >✕ 초기화</button>
+                    )}
+                  </div>
+                </div>
+                {activeSearch && (
+                  <p className="text-center text-xs text-slate-400 mt-2 font-semibold">
+                    🔍 &apos;{activeSearch}&apos; 검색 결과 ({posts.length}건)
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* 7-2. 전체 검색 결과 */}
+            {currentView === "전체 검색" && !focusPostId && (
+              <div className="space-y-4">
+                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm mb-2">
+                  <h3 className="text-xl font-black tracking-tight text-slate-800">🔍 전체 검색 결과</h3>
+                  {activeSearch && (
+                    <p className="text-sm text-slate-500 mt-2 font-semibold">
+                      &apos;{activeSearch}&apos; 검색 결과 {posts.length > 0 ? `(${posts.length}건)` : ""}
+                    </p>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden py-2 px-2 md:px-4">
+                  {!isLoading && posts.length === 0 ? (
+                    <p className="p-12 text-center text-slate-400 text-sm font-semibold">검색 결과가 없습니다.</p>
+                  ) : posts.map(p => {
+                    let isExp = false;
+                    try { isExp = p.status === "종료" || (p.endDate && new Date(p.endDate) < new Date(new Date().setHours(0,0,0,0))); } catch(e) {}
+                    const expTag = isExp ? <span className="text-red-500 font-bold mr-1.5">[종료]</span> : null;
+                    
+                    return (
+                      <div key={p.id} className="hover:bg-slate-50/85 transition-colors border-b border-slate-100 last:border-none rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <span className="inline-block text-[11px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg mr-2 mb-1.5">{p.category}</span>
+                          <span className="inline-block text-[11px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg mr-2 mb-1.5">{p.subCategory || "일반"}</span>
+                          <button onClick={()=>handleViewPost(p.id, p.category)} className="text-sm font-bold text-slate-800 hover:text-blue-600 block text-left truncate w-full">
+                            {expTag}{p.title}{p.image || p.images?.length > 0 ? " 🖼️" : ""}
+                          </button>
+                        </div>
+                        <div className="flex items-center text-xs text-slate-400 font-semibold gap-3 shrink-0 flex-wrap">
+                          {p.endDate && (
+                            <span className="text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded-lg">~ {p.endDate}</span>
+                          )}
+                          <button onClick={() => handleAuthorClick(p.author)} className="font-bold text-slate-600 hover:underline max-w-[90px] truncate">{getUserDisplayName(p.author)}</button>
+                          <span>👀 {p.views}</span>
+                          <span className="font-bold text-blue-600">👍 {p.upvotes}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex gap-1.5 mt-8 justify-center flex-wrap">
+                  {Array.from({length: totalPages}, (_,i)=>i+1).map(pageNum => (
+                    <button 
+                      key={pageNum} 
+                      onClick={()=>setCurrentPage(pageNum)} 
+                      className={`w-9 h-9 rounded-xl text-xs font-bold transition-all ${currentPage === pageNum ? "bg-slate-900 text-white shadow-sm" : "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                    >
+                      {pageNum}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
