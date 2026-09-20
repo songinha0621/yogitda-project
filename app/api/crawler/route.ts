@@ -198,66 +198,69 @@ export async function GET() {
   }
 
   // ====================================================================
-  // 1-2. 네이버페이 [쿠폰]
+  // 1-2. 네이버페이 [쿠폰] (SSR HTML 파싱 - promotionName + exposeTitle + conditionText)
   // ====================================================================
   try {
-    const COUPON_API_URL = 'https://point.pay.naver.com/pd/public-api/coupon/v1/usages/by-category?couponUsageType=ONLINE';
-    const USER_FACING_URL = 'https://point.pay.naver.com/coupon/home/online';
+    const COUPON_PAGE_URL = 'https://point.pay.naver.com/coupon/home/online';
     
-    const { data: couponData } = await axios.get(COUPON_API_URL, { headers: stealthHeaders, validateStatus: () => true });
+    const { data: couponHtml } = await axios.get(COUPON_PAGE_URL, { headers: stealthHeaders, validateStatus: () => true });
     
-    if (couponData && typeof couponData === 'object') {
-      const extractCoupons = (obj: any): any[] => {
-          let found: any[] = [];
-          if (!obj || typeof obj !== 'object') {
-            return found;
-          }
-
-          const brand = obj.merchantName || obj.brandName || obj.usageName || obj.promotionName; 
-          if (brand && typeof brand === 'string' && brand.length < 30) {
-              const benefit = obj.benefitName || obj.couponName || obj.title || obj.exposeTitle || "할인 쿠폰"; 
-              const condition = obj.conditionText || obj.benefitCondition || findDeepCondition(obj); 
-              found.push({ 
-                brand: brand, 
-                benefit: benefit, 
-                condition: condition, 
-                raw: obj 
-              });
-          }
-          
-          for (const key of Object.keys(obj)) { 
-            if (typeof obj[key] === 'object') {
-              found = found.concat(extractCoupons(obj[key])); 
-            }
-          }
-          return found;
-      };
-
-      const extracted = extractCoupons(couponData);
-      const uniqueCoupons = Array.from(new Set(extracted.map(e => JSON.stringify(e)))).map((e: any) => JSON.parse(e));
-
-      uniqueCoupons.forEach((c: any) => {
-          const title = `[네이버페이 쿠폰] [${c.brand}] ${c.benefit}`;
-          let cText = c.condition ? String(c.condition).replace(/\n/g, ' ').trim() : "";
-          const detailContent = cText ? `📌 [조건] ${cText}` : genericContent;
-
-          addLiveTitle("네이버페이 쿠폰", c.brand, title);
-          diagnostics.N_쿠폰++;
-
-          if (!existingTitles.includes(title)) {
+    if (typeof couponHtml === 'string' && couponHtml.length > 0) {
+      // SSR 데이터에서 promotionName, exposeTitle, conditionText를 개별 추출 후 인덱스 순서로 매칭
+      const promoRegex = /promotionName:"([^"]+)"/g;
+      const exposeRegex = /exposeTitle:"([^"]+)"/g;
+      const condRegex = /conditionText:"([^"]+)"/g;
+      const linkRegex = /linkUrl:"([^"]+)"/g;
+      const endDateRegex = /exposeEndDateTime:(\d+)/g;
+      
+      const promos: string[] = [];
+      const exposes: string[] = [];
+      const conds: string[] = [];
+      const links: string[] = [];
+      const endDates: string[] = [];
+      
+      let m: RegExpExecArray | null;
+      while ((m = promoRegex.exec(couponHtml)) !== null) promos.push(m[1]);
+      while ((m = exposeRegex.exec(couponHtml)) !== null) exposes.push(m[1]);
+      while ((m = condRegex.exec(couponHtml)) !== null) conds.push(m[1]);
+      while ((m = linkRegex.exec(couponHtml)) !== null) links.push(decodeURIComponent(m[1]));
+      while ((m = endDateRegex.exec(couponHtml)) !== null) {
+        try { endDates.push(new Date(parseInt(m[1])).toISOString().split('T')[0]); } 
+        catch { endDates.push(''); }
+      }
+      
+      const couponCount = Math.min(promos.length, exposes.length, conds.length);
+      
+      for (let i = 0; i < couponCount; i++) {
+        const brand = promos[i].trim();
+        const discount = exposes[i].trim();
+        const condition = conds[i].trim();
+        const link = links[i] || COUPON_PAGE_URL;
+        const endDate = endDates[i] || null;
+        
+        // 💡 "컬리 12,000원 할인 3개월 간 주문이력 없을 시" 형태의 제목 생성
+        const title = `[네이버페이 쿠폰] ${brand} ${discount} ${condition}`;
+        const detailContent = `📌 [브랜드] ${brand}\n📌 [할인] ${discount}\n📌 [조건] ${condition}\n\n${genericContent}`;
+        
+        addLiveTitle("네이버페이 쿠폰", brand, title);
+        diagnostics.N_쿠폰++;
+        
+        if (!existingTitles.includes(title)) {
+          if (!isPast(endDate)) {
             scrapedDeals.push({
-                title: title, 
-                content: detailContent, 
-                url: USER_FACING_URL, 
-                category: "쇼핑", 
-                sub_category: "네이버페이 쿠폰", 
-                author: "AutoBot", 
-                mall_name: c.brand, 
-                status: "진행중", 
-                end_date: null, 
+              title: title,
+              content: detailContent,
+              url: link,
+              category: "쇼핑",
+              sub_category: "네이버페이 쿠폰",
+              author: "AutoBot",
+              mall_name: brand,
+              status: "진행중",
+              end_date: endDate,
             });
           }
-      });
+        }
+      }
     }
   } catch (e: any) { 
     errors.push(`[네이버페이 쿠폰] ${e.message}`); 
