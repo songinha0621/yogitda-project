@@ -258,25 +258,53 @@ export default function Home() {
   }, [currentView, selectedSub, sortOption, activeSearch, currentPage, focusPostId, auth.userId, currentTab]);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && !window.history.state) {
-      window.history.replaceState({ view: "로비" }, '', window.location.pathname + window.location.search);
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewFromUrl = urlParams.get('view');
+      const postIdFromUrl = urlParams.get('post');
+      const subFromUrl = urlParams.get('sub');
+
+      const qFromUrl = urlParams.get('q');
+
+      if (postIdFromUrl) {
+        // 게시글 상세 보기 복원
+        setFocusPostId(parseInt(postIdFromUrl, 10));
+        if (viewFromUrl) setCurrentView(decodeURIComponent(viewFromUrl));
+      } else if (viewFromUrl) {
+        // 카테고리/탭 뷰 복원
+        setCurrentView(decodeURIComponent(viewFromUrl));
+        if (subFromUrl) setSelectedSub(decodeURIComponent(subFromUrl));
+        // 전체 검색 복원
+        if (qFromUrl) { setActiveSearch(decodeURIComponent(qFromUrl)); setSearchQuery(decodeURIComponent(qFromUrl)); }
+      }
+      
+      if (!window.history.state) {
+        window.history.replaceState({ view: viewFromUrl ? decodeURIComponent(viewFromUrl) : "로비" }, '', window.location.pathname + window.location.search);
+      }
     }
 
     const handlePopState = (event: any) => {
       const state = event.state;
       const urlParams = new URLSearchParams(window.location.search);
       const postIdFromUrl = urlParams.get('post');
+      const viewFromUrl = urlParams.get('view');
+      const subFromUrl = urlParams.get('sub');
 
       if (postIdFromUrl) {
         setFocusPostId(parseInt(postIdFromUrl, 10));
         if (state && state.view) setCurrentView(state.view);
+        else if (viewFromUrl) setCurrentView(decodeURIComponent(viewFromUrl));
       } else {
         setFocusPostId(null);
         if (state && state.view) {
           setCurrentView(state.view);
+        } else if (viewFromUrl) {
+          setCurrentView(decodeURIComponent(viewFromUrl));
         } else {
           setCurrentView("로비");
         }
+        if (subFromUrl) setSelectedSub(decodeURIComponent(subFromUrl));
+        else setSelectedSub("전체");
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -464,7 +492,8 @@ export default function Home() {
     setCurrentView(view); setFocusPostId(null); setActiveSearch(""); setSearchQuery(""); setSelectedSub("전체"); setCurrentPage(1); setCurrentTab("인기"); window.scrollTo(0,0); 
     
     if (typeof window !== "undefined") {
-      window.history.pushState({ view: view }, '', '/'); 
+      const url = view === "로비" ? '/' : `?view=${encodeURIComponent(view)}`;
+      window.history.pushState({ view: view }, '', url); 
     }
 
     if (view === "글쓰기") { 
@@ -491,7 +520,7 @@ export default function Home() {
     setFocusPostId(postId); setCurrentView(cat);
     
     if (typeof window !== "undefined") {
-      window.history.pushState({ view: cat }, '', `?post=${postId}`);
+      window.history.pushState({ view: cat }, '', `?post=${postId}&view=${encodeURIComponent(cat)}`);
     }
     window.scrollTo(0,0);
   };
@@ -586,7 +615,7 @@ export default function Home() {
                       setSelectedSub("전체"); 
                       setCurrentPage(1); 
                       window.scrollTo(0,0);
-                      if (typeof window !== "undefined") window.history.pushState({ view: "전체 검색" }, '', '/');
+                      if (typeof window !== "undefined") window.history.pushState({ view: "전체 검색" }, '', `?view=${encodeURIComponent("전체 검색")}&q=${encodeURIComponent(searchQuery.trim())}`);
                     } 
                   }} 
                   className="w-full h-full px-4 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:border-slate-400 transition-all text-sm shadow-sm" 
