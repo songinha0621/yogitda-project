@@ -122,7 +122,6 @@ export default function Home() {
       let query = supabase.from('deals').select('*', { count: 'exact' });
 
       if (currentView === "전체 검색" && activeSearch && !focusPostId) {
-        // 💡 전체 검색: 카테고리 무관 모든 글에서 키워드 검색
         query = query.or(`title.ilike.%${activeSearch}%,content.ilike.%${activeSearch}%`);
         query = query.order('id', { ascending: false });
         const from = (currentPage - 1) * 12;
@@ -149,7 +148,6 @@ export default function Home() {
           query = query.or(`title.ilike.%${activeSearch}%,content.ilike.%${activeSearch}%`);
         }
 
-        // 💡 인기 탭 분리 적용 (인기 탭이면 추천순 정렬 강제)
         if (currentTab === "인기") {
           query = query.order('upvotes', { ascending: false }).order('views', { ascending: false });
         } else {
@@ -162,7 +160,6 @@ export default function Home() {
           }
         }
 
-        // 💡 1페이지당 12개 출력
         const from = (currentPage - 1) * 12;
         const to = from + 12 - 1;
         query = query.range(from, to);
@@ -228,7 +225,6 @@ export default function Home() {
 
         setPosts(mappedPosts);
         
-        // 💡 총 페이지 수도 12개 기준으로 계산
         if ((CATEGORIES.includes(currentView) || currentView === "전체 검색") && !focusPostId && count !== null) {
           setTotalPages(Math.ceil(count / 12) || 1);
         }
@@ -257,29 +253,34 @@ export default function Home() {
     fetchTargetData();
   }, [currentView, selectedSub, sortOption, activeSearch, currentPage, focusPostId, auth.userId, currentTab]);
 
+  // 💡 새로고침 대응 및 히스토리 내비게이션 복구 완벽 처리
   useEffect(() => {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
       const viewFromUrl = urlParams.get('view');
       const postIdFromUrl = urlParams.get('post');
       const subFromUrl = urlParams.get('sub');
-
+      const tabFromUrl = urlParams.get('tab');
       const qFromUrl = urlParams.get('q');
 
       if (postIdFromUrl) {
-        // 게시글 상세 보기 복원
         setFocusPostId(parseInt(postIdFromUrl, 10));
         if (viewFromUrl) setCurrentView(decodeURIComponent(viewFromUrl));
+        if (subFromUrl) setSelectedSub(decodeURIComponent(subFromUrl));
+        if (tabFromUrl) setCurrentTab(decodeURIComponent(tabFromUrl));
       } else if (viewFromUrl) {
-        // 카테고리/탭 뷰 복원
         setCurrentView(decodeURIComponent(viewFromUrl));
         if (subFromUrl) setSelectedSub(decodeURIComponent(subFromUrl));
-        // 전체 검색 복원
+        if (tabFromUrl) setCurrentTab(decodeURIComponent(tabFromUrl));
         if (qFromUrl) { setActiveSearch(decodeURIComponent(qFromUrl)); setSearchQuery(decodeURIComponent(qFromUrl)); }
       }
       
       if (!window.history.state) {
-        window.history.replaceState({ view: viewFromUrl ? decodeURIComponent(viewFromUrl) : "로비" }, '', window.location.pathname + window.location.search);
+        window.history.replaceState({ 
+          view: viewFromUrl ? decodeURIComponent(viewFromUrl) : "로비",
+          sub: subFromUrl ? decodeURIComponent(subFromUrl) : "전체",
+          tab: tabFromUrl ? decodeURIComponent(tabFromUrl) : "인기"
+        }, '', window.location.pathname + window.location.search);
       }
     }
 
@@ -289,11 +290,18 @@ export default function Home() {
       const postIdFromUrl = urlParams.get('post');
       const viewFromUrl = urlParams.get('view');
       const subFromUrl = urlParams.get('sub');
+      const tabFromUrl = urlParams.get('tab');
 
       if (postIdFromUrl) {
         setFocusPostId(parseInt(postIdFromUrl, 10));
         if (state && state.view) setCurrentView(state.view);
         else if (viewFromUrl) setCurrentView(decodeURIComponent(viewFromUrl));
+        
+        if (state && state.sub) setSelectedSub(state.sub);
+        else if (subFromUrl) setSelectedSub(decodeURIComponent(subFromUrl));
+        
+        if (state && state.tab) setCurrentTab(state.tab);
+        else if (tabFromUrl) setCurrentTab(decodeURIComponent(tabFromUrl));
       } else {
         setFocusPostId(null);
         if (state && state.view) {
@@ -303,8 +311,14 @@ export default function Home() {
         } else {
           setCurrentView("로비");
         }
-        if (subFromUrl) setSelectedSub(decodeURIComponent(subFromUrl));
+        
+        if (state && state.sub) setSelectedSub(state.sub);
+        else if (subFromUrl) setSelectedSub(decodeURIComponent(subFromUrl));
         else setSelectedSub("전체");
+        
+        if (state && state.tab) setCurrentTab(state.tab);
+        else if (tabFromUrl) setCurrentTab(decodeURIComponent(tabFromUrl));
+        else setCurrentTab("인기");
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -317,7 +331,6 @@ export default function Home() {
 
     const { data: existingActions } = await supabase.from('post_actions').select('*').eq('post_id', dbId).eq('user_id', auth.userId);
     
-    // 💡 [핵심 추가] targetPost를 상단으로 끌어올려 '대박이다(hot)' 버튼도 좋아요(upvotes)와 연동되게 합니다.
     const targetPost = posts.find(p => p.id === postId);
     if (!targetPost) return;
 
@@ -325,33 +338,20 @@ export default function Home() {
 
     if (['hot', 'soso', 'cold'].includes(actionType)) {
       const existingThermo = existingActions?.find(a => ['hot', 'soso', 'cold'].includes(a.action_type));
-      let upvotesChange = 0; // 💡 좋아요 수치 증감 계산용 변수
+      let upvotesChange = 0; 
 
       if (existingThermo) {
         await supabase.from('post_actions').delete().eq('id', existingThermo.id);
-        
-        // 기존에 누른 게 'hot(대박이다)' 였다면 좋아요 수 감소
-        if (existingThermo.action_type === 'hot') {
-          upvotesChange -= 1;
-        }
-
-        // 같은 버튼 클릭 시 취소 적용
+        if (existingThermo.action_type === 'hot') { upvotesChange -= 1; }
         if (existingThermo.action_type === actionType) {
-          if (upvotesChange !== 0) {
-            await supabase.from('deals').update({ upvotes: Math.max(0, targetPost.upvotes + upvotesChange) }).eq('id', dbId);
-          }
+          if (upvotesChange !== 0) { await supabase.from('deals').update({ upvotes: Math.max(0, targetPost.upvotes + upvotesChange) }).eq('id', dbId); }
           fetchTargetData(); return; 
         }
       }
       
-      // 새로 누른 버튼이 'hot(대박이다)' 인 경우 좋아요 수 증가
-      if (actionType === 'hot') {
-        upvotesChange += 1;
-      }
-
+      if (actionType === 'hot') { upvotesChange += 1; }
       await supabase.from('post_actions').insert([{ post_id: dbId, user_id: auth.userId, action_type: actionType }]);
 
-      // DB에 upvotes 수치 반영 (추천순 정렬 연동을 위함)
       if (upvotesChange !== 0) {
         await supabase.from('deals').update({ upvotes: Math.max(0, targetPost.upvotes + upvotesChange) }).eq('id', dbId);
       }
@@ -408,7 +408,6 @@ export default function Home() {
 
   const handleSocialLogin = async (provider: string) => {
     const actualProvider = provider === 'naver' ? 'custom:naver' : provider;
-    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: actualProvider as any,
       options: { 
@@ -416,7 +415,6 @@ export default function Home() {
         ...(provider === 'kakao' && { scopes: 'profile_nickname profile_image' })
       }
     });
-    
     if (error) alert("소셜 로그인 연결 실패: " + error.message);
   };
 
@@ -488,12 +486,14 @@ export default function Home() {
   
   const [adminEditCat, setAdminEditCat] = useState("옷"); const [adminAddSubInput, setAdminAddSubInput] = useState(""); const [adminRenameTarget, setAdminRenameTarget] = useState("선택안함"); const [adminRenameInput, setAdminRenameInput] = useState(""); const [adminDelTarget, setAdminDelTarget] = useState("선택안함");
   
+  // 💡 새로고침 대응 - URL 푸시 연동 업데이트
   const navigate = (view: string) => { 
     setCurrentView(view); setFocusPostId(null); setActiveSearch(""); setSearchQuery(""); setSelectedSub("전체"); setCurrentPage(1); setCurrentTab("인기"); window.scrollTo(0,0); 
     
     if (typeof window !== "undefined") {
       const url = view === "로비" ? '/' : `?view=${encodeURIComponent(view)}`;
-      window.history.pushState({ view: view }, '', url); 
+      // 뷰 이동 시에는 sub와 tab도 초기화값으로 인코딩해 푸시
+      window.history.pushState({ view: view, sub: "전체", tab: "인기" }, '', url); 
     }
 
     if (view === "글쓰기") { 
@@ -520,7 +520,8 @@ export default function Home() {
     setFocusPostId(postId); setCurrentView(cat);
     
     if (typeof window !== "undefined") {
-      window.history.pushState({ view: cat }, '', `?post=${postId}&view=${encodeURIComponent(cat)}`);
+      // 💡 게시글 클릭 시점에도 뒤로가기를 대비해 현재의 머리말/탭을 모두 물고 URL 업데이트
+      window.history.pushState({ view: cat, sub: selectedSub, tab: currentTab }, '', `?post=${postId}&view=${encodeURIComponent(cat)}&sub=${encodeURIComponent(selectedSub)}&tab=${encodeURIComponent(currentTab)}`);
     }
     window.scrollTo(0,0);
   };
@@ -615,7 +616,7 @@ export default function Home() {
                       setSelectedSub("전체"); 
                       setCurrentPage(1); 
                       window.scrollTo(0,0);
-                      if (typeof window !== "undefined") window.history.pushState({ view: "전체 검색" }, '', `?view=${encodeURIComponent("전체 검색")}&q=${encodeURIComponent(searchQuery.trim())}`);
+                      if (typeof window !== "undefined") window.history.pushState({ view: "전체 검색", sub: "전체", tab: "인기" }, '', `?view=${encodeURIComponent("전체 검색")}&q=${encodeURIComponent(searchQuery.trim())}`);
                     } 
                   }} 
                   className="w-full h-full px-4 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:border-slate-400 transition-all text-sm shadow-sm" 
@@ -886,13 +887,19 @@ export default function Home() {
 
                 <div className="flex space-x-4 border-b border-slate-200 px-2">
                   <button 
-                    onClick={() => { setCurrentTab("인기"); setCurrentPage(1); }} 
+                    onClick={() => { 
+                      setCurrentTab("인기"); setCurrentPage(1); 
+                      if (typeof window !== "undefined") window.history.pushState({ view: currentView, sub: selectedSub, tab: "인기" }, '', `?view=${encodeURIComponent(currentView)}&sub=${encodeURIComponent(selectedSub)}&tab=인기`);
+                    }} 
                     className={`py-3 px-2 font-black text-[15px] border-b-[3px] transition-all -mb-[1px] ${currentTab === "인기" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-400 hover:text-slate-600"}`}
                   >
                     🔥 인기글
                   </button>
                   <button 
-                    onClick={() => { setCurrentTab("전체"); setCurrentPage(1); }} 
+                    onClick={() => { 
+                      setCurrentTab("전체"); setCurrentPage(1); 
+                      if (typeof window !== "undefined") window.history.pushState({ view: currentView, sub: selectedSub, tab: "전체" }, '', `?view=${encodeURIComponent(currentView)}&sub=${encodeURIComponent(selectedSub)}&tab=전체`);
+                    }} 
                     className={`py-3 px-2 font-black text-[15px] border-b-[3px] transition-all -mb-[1px] ${currentTab === "전체" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-400 hover:text-slate-600"}`}
                   >
                     전체 (최신)
@@ -904,7 +911,13 @@ export default function Home() {
                     {subCategories[currentView]?.map((sub: string) => (
                       <button 
                         key={sub} 
-                        onClick={() => { setSelectedSub(sub); setCurrentPage(1); }}
+                        onClick={() => { 
+                          setSelectedSub(sub); setCurrentPage(1); 
+                          if (typeof window !== "undefined") {
+                            const url = `?view=${encodeURIComponent(currentView)}&sub=${encodeURIComponent(sub)}&tab=${encodeURIComponent(currentTab)}`;
+                            window.history.pushState({ view: currentView, sub: sub, tab: currentTab }, '', url);
+                          }
+                        }}
                         className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all ${selectedSub === sub ? "bg-slate-900 text-white shadow-sm" : "bg-white border border-slate-200/80 text-slate-500 hover:text-slate-900"}`}
                       >
                         {sub}
@@ -1073,7 +1086,14 @@ export default function Home() {
                 return (
                   <div className="bg-white border border-slate-100 p-5 md:p-8 rounded-3xl shadow-sm space-y-6">
                     <div>
-                      <button onClick={()=>navigate(currentView)} className="text-xs font-black text-slate-400 hover:text-slate-900 flex items-center gap-1">← 목록으로 돌아가기</button>
+                      <button onClick={()=>{
+                        setFocusPostId(null);
+                        if (typeof window !== "undefined") {
+                          const url = `?view=${encodeURIComponent(currentView)}&sub=${encodeURIComponent(selectedSub)}&tab=${encodeURIComponent(currentTab)}`;
+                          window.history.pushState({ view: currentView, sub: selectedSub, tab: currentTab }, '', url);
+                        }
+                        window.scrollTo(0,0);
+                      }} className="text-xs font-black text-slate-400 hover:text-slate-900 flex items-center gap-1">← 목록으로 돌아가기</button>
                     </div>
                     
                     <div className="space-y-3">
@@ -1174,7 +1194,14 @@ export default function Home() {
                               }
                               setPosts((prev: any[]) => prev.filter(p=>p.id!==post.id)); 
                               if (post.id >= 10000) await supabase.from('deals').delete().eq('id', post.id - 10000);
-                              navigate(currentView); 
+                              
+                              // 삭제 후에도 보던 리스트로 돌아가기
+                              setFocusPostId(null);
+                              if (typeof window !== "undefined") {
+                                const url = `?view=${encodeURIComponent(currentView)}&sub=${encodeURIComponent(selectedSub)}&tab=${encodeURIComponent(currentTab)}`;
+                                window.history.pushState({ view: currentView, sub: selectedSub, tab: currentTab }, '', url);
+                              }
+                              window.scrollTo(0,0);
                             }
                           }} className="px-4 py-2 bg-red-600 text-white text-[11px] font-bold rounded-xl hover:bg-red-700 transition-colors">삭제</button>                        
                         </>
